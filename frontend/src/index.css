@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-surface-muted text-gray-900 antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+}

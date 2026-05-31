@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 
 from src.api.deps import (
     HasherDep,
@@ -55,6 +55,8 @@ async def update_me(
 @router.post(
     "/me/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Change the authenticated user's password",
 )
 async def change_password(
@@ -71,6 +73,8 @@ async def change_password(
 @router.delete(
     "/me",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Soft-delete the authenticated user's account",
 )
 async def delete_account(

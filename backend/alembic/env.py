@@ -69,9 +69,11 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations using an async engine (online mode)."""
+    import os
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = _get_url().replace(
-        "postgresql+asyncpg://", "postgresql://", 1
+    # Use the raw async URL — _get_url() strips +asyncpg which breaks async_engine_from_config
+    configuration["sqlalchemy.url"] = (
+        os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url", "")
     )
     connectable = async_engine_from_config(
         configuration,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
 from src.api.deps import CurrentUserDep, UoWDep
@@ -144,7 +144,7 @@ async def list_members(
     return [MemberResponse.from_domain(m) for m in members]
 
 
-@router.patch("/trees/{tree_id}/members/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch("/trees/{tree_id}/members/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT, response_model=None, response_class=Response)
 async def change_member_role(
     tree_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -163,7 +163,7 @@ async def change_member_role(
     )
 
 
-@router.delete("/trees/{tree_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/trees/{tree_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None, response_class=Response)
 async def remove_member(
     tree_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -234,7 +234,7 @@ async def accept_invitation(
     return MemberResponse.from_domain(membership)
 
 
-@router.delete("/trees/{tree_id}/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/trees/{tree_id}/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None, response_class=Response)
 async def revoke_invitation(
     tree_id: uuid.UUID,
     invitation_id: uuid.UUID,
@@ -302,6 +302,8 @@ async def list_person_versions(
 @router.post(
     "/trees/{tree_id}/persons/{person_id}/versions/{version_number}/restore",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
 )
 async def restore_person_version(
     tree_id: uuid.UUID,

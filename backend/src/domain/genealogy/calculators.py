@@ -387,5 +387,3 @@ def _path_edge_labels(graph: FamilyGraph, path: list[uuid.UUID]) -> list[str]:
         else:
             labels.append("relative")
     return labels
-lative")
-    return labels

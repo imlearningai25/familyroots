@@ -28,7 +28,7 @@ class MediaModel(Base):
     )
     tree_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("trees.id", ondelete="CASCADE"),
+        ForeignKey("family_trees.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

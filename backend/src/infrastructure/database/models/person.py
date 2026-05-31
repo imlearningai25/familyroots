@@ -27,7 +27,7 @@ class PersonModel(Base, TenantMixin, TimestampMixin):
     )
     tree_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("trees.id", ondelete="CASCADE"),
+        ForeignKey("family_trees.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     sex: Mapped[str] = mapped_column(
@@ -69,7 +69,7 @@ class FamilyGroupModel(Base, TenantMixin, TimestampMixin):
     )
     tree_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("trees.id", ondelete="CASCADE"),
+        ForeignKey("family_trees.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )
     union_type: Mapped[str] = mapped_column(
@@ -120,6 +120,12 @@ class FamilyGroupMemberModel(Base, TenantMixin, TimestampMixin):
             name="parentage_type", create_type=False,
         ),
         nullable=True,
+    )
+
+    tree_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("family_trees.id", ondelete="CASCADE"),
+        nullable=False, index=True,
     )
 
     person: Mapped["PersonModel"] = relationship(

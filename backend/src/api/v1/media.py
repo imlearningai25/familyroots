@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, Field
 
 from src.api.dependencies import get_current_user, get_db_session, get_media_service
@@ -271,6 +271,8 @@ async def update_metadata(
 @router.delete(
     "/{media_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Soft-delete a media item (and its S3 variants)",
 )
 async def delete_media(

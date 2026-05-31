@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from src.api.deps import SessionDep, VerifiedUserDep
 from src.application.genealogy.schemas import (
@@ -51,6 +51,8 @@ async def get_person(
 @router.post(
     "/{person_id}/parents",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Add a parent to a person",
 )
 async def add_parent(
@@ -70,6 +72,8 @@ async def add_parent(
 @router.post(
     "/{person_id}/children",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Add a child to a person",
 )
 async def add_child(
@@ -89,6 +93,8 @@ async def add_child(
 @router.post(
     "/{person_id}/spouses",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Add a spouse / partner relationship",
 )
 async def add_spouse(
@@ -108,6 +114,8 @@ async def add_spouse(
 @router.post(
     "/{person_id}/siblings",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Add a sibling relationship",
 )
 async def add_sibling(

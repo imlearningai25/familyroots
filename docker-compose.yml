@@ -4,6 +4,7 @@
 name: familyroots-dev
 
 x-backend-env: &backend-env
+  PYTHONPATH:          /app
   DATABASE_URL:        postgresql+asyncpg://postgres:postgres@db:5432/familyroots
   SYNC_DATABASE_URL:   postgresql+psycopg2://postgres:postgres@db:5432/familyroots
   REDIS_URL:           redis://redis:6379/0

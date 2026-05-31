@@ -100,6 +100,8 @@ async def refresh(
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Revoke the current refresh token",
 )
 async def logout(
@@ -115,6 +117,8 @@ async def logout(
 @router.post(
     "/verify-email",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Verify email address using the token sent by email",
 )
 async def verify_email(
@@ -127,6 +131,8 @@ async def verify_email(
 @router.post(
     "/forgot-password",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Request a password reset email",
 )
 async def forgot_password(
@@ -139,6 +145,8 @@ async def forgot_password(
 @router.post(
     "/reset-password",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
     summary="Reset password using the token from email",
 )
 async def reset_password(
