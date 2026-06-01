@@ -10,18 +10,20 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 
-from src.api.deps import UoWDep, JWTServiceDep, TokenStoreDep, HasherDep
-from src.core.config import Settings, get_settings
-from src.domain.users.entities import User, UserStatus
-from src.infrastructure.security.oauth import get_oauth_client, OAuthUserInfo
+from src.api.deps import JWTServiceDep, TokenStoreDep, UoWDep
+from src.config import Settings, get_settings
 from src.infrastructure.database.models.collaboration import OAuthConnectionModel
+from src.infrastructure.database.models.user import UserModel
+from src.infrastructure.security.oauth import OAuthUserInfo, get_oauth_client
 
 router = APIRouter(prefix="/auth/oauth", tags=["oauth"])
 
 SUPPORTED_PROVIDERS = {"google", "github"}
+_REFRESH_TTL = 60 * 60 * 24 * 30  # 30 days in seconds
 
 
 # ── Step 1: redirect to provider ──────────────────────────────────────────────
@@ -29,7 +31,6 @@ SUPPORTED_PROVIDERS = {"google", "github"}
 @router.get("/{provider}")
 async def oauth_redirect(
     provider: str,
-    response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RedirectResponse:
     if provider not in SUPPORTED_PROVIDERS:
@@ -38,7 +39,6 @@ async def oauth_redirect(
     client = get_oauth_client(provider, settings)
     state = client.generate_state()
 
-    # Store state in httpOnly cookie (short TTL — 10 min)
     resp = RedirectResponse(client.build_authorization_url(state), status_code=302)
     resp.set_cookie(
         key=f"oauth_state_{provider}",
@@ -70,51 +70,35 @@ async def oauth_callback(
     # Validate CSRF state
     cookie_state = request.cookies.get(f"oauth_state_{provider}")
     if not cookie_state or cookie_state != state:
-        _redirect_error(settings, "oauth_state_mismatch")
+        return _redirect_error(settings, "oauth_state_mismatch")
 
     client = get_oauth_client(provider, settings)
 
     try:
         access_token = await client.exchange_code(code)
         user_info: OAuthUserInfo = await client.get_user_info(access_token)
-    except Exception as exc:
+    except Exception:
         return _redirect_error(settings, "oauth_provider_error")
 
     async with uow:
-        # 1. Find or create user
-        existing_user = await uow.users.get_by_email(user_info.email)
-
-        if existing_user:
-            user = existing_user
-        else:
-            # Auto-provision — create new user from OAuth profile
-            user = User(
-                id=uuid.uuid4(),
-                tenant_id=settings.default_tenant_id,  # configurable per deploy
-                email=user_info.email,
-                display_given_name=_first(user_info.display_name),
-                display_surname=_last(user_info.display_name),
-                hashed_password=None,       # OAuth users have no password
-                status=UserStatus.ACTIVE,
-                is_email_verified=user_info.email_verified,
-                avatar_url=user_info.avatar_url,
-            )
-            await uow.users.add(user)
+        # 1. Find or provision user
+        user = await _find_or_create_user(uow, user_info, settings)
+        if user is None:
+            return _redirect_error(settings, "oauth_provisioning_disabled")
 
         # 2. Upsert OAuth connection record
-        # (simplified — production would use a dedicated repo)
-        existing_conn = await uow.session.execute(
-            __import__("sqlalchemy", fromlist=["select"]).select(OAuthConnectionModel).where(
+        result = await uow._session.execute(
+            select(OAuthConnectionModel).where(
                 OAuthConnectionModel.provider == provider,
                 OAuthConnectionModel.provider_user_id == user_info.provider_user_id,
             )
         )
-        conn_row = existing_conn.scalar_one_or_none()
-        if conn_row:
-            conn_row.last_used_at = datetime.now(timezone.utc)
-            conn_row.avatar_url = user_info.avatar_url
+        conn = result.scalar_one_or_none()
+        if conn:
+            conn.last_used_at = datetime.now(timezone.utc)
+            conn.avatar_url = user_info.avatar_url
         else:
-            conn = OAuthConnectionModel(
+            uow._session.add(OAuthConnectionModel(
                 id=uuid.uuid4(),
                 user_id=user.id,
                 tenant_id=user.tenant_id,
@@ -123,63 +107,79 @@ async def oauth_callback(
                 email=user_info.email,
                 display_name=user_info.display_name,
                 avatar_url=user_info.avatar_url,
-            )
-            uow.session.add(conn)
+            ))
 
         # 3. Issue JWT pair
-        jwt_access = jwt_service.create_access_token(
-            user_id=str(user.id),
-            tenant_id=str(user.tenant_id),
-        )
-        jwt_refresh = jwt_service.create_refresh_token(
-            user_id=str(user.id),
-            tenant_id=str(user.tenant_id),
-        )
-        jti = jwt_service.decode_refresh_token(jwt_refresh)["jti"]
-        await token_store.store_refresh_token(
-            jti=jti,
-            user_id=str(user.id),
-            tenant_id=str(user.tenant_id),
-        )
+        jwt_access, _  = jwt_service.create_access_token(user.id, user.tenant_id)
+        jwt_refresh, jti = jwt_service.create_refresh_token(user.id, user.tenant_id)
+        await token_store.store(jti, user.id, _REFRESH_TTL)
+        await uow.commit()
 
-    # 4. Redirect to frontend with access token in query param
-    #    (frontend should immediately move it to memory and drop from URL)
+    # 4. Redirect frontend with token in query param (frontend moves it to memory)
     frontend_url = (
         f"{settings.frontend_base_url}/auth/callback"
-        f"?access_token={jwt_access}"
-        f"&provider={provider}"
+        f"?access_token={jwt_access}&provider={provider}"
     )
-    response = RedirectResponse(frontend_url, status_code=302)
-    # Set refresh token in httpOnly cookie
-    response.set_cookie(
+    resp = RedirectResponse(frontend_url, status_code=302)
+    resp.set_cookie(
         key="refresh_token",
         value=jwt_refresh,
         httponly=True,
         samesite="lax",
         secure=not settings.debug,
-        max_age=60 * 60 * 24 * 30,  # 30 days
+        max_age=_REFRESH_TTL,
     )
-    # Clear the state cookie
-    response.delete_cookie(f"oauth_state_{provider}")
-    return response
+    resp.delete_cookie(f"oauth_state_{provider}")
+    return resp
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _redirect_error(settings: "Settings", reason: str) -> RedirectResponse:
+async def _find_or_create_user(
+    uow: UoWDep,
+    info: OAuthUserInfo,
+    settings: Settings,
+) -> UserModel | None:
+    # Check every tenant for an existing account with this email
+    from sqlalchemy import select as sa_select
+    result = await uow._session.execute(
+        sa_select(UserModel).where(UserModel.email == info.email.lower())
+    )
+    user = result.scalars().first()
+    if user:
+        return user
+
+    # Auto-provision: requires default_tenant_id to be configured
+    if not settings.default_tenant_id:
+        return None
+
+    try:
+        tenant_id = uuid.UUID(settings.default_tenant_id)
+    except ValueError:
+        return None
+
+    parts = (info.display_name or "").strip().split()
+    given  = parts[0] if parts else ""
+    family = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+    new_user = UserModel()
+    new_user.id = uuid.uuid4()
+    new_user.tenant_id = tenant_id
+    new_user.email = info.email.lower()
+    new_user.given_name = given
+    new_user.family_name = family
+    new_user.avatar_url = info.avatar_url
+    new_user.email_verified = info.email_verified
+    new_user.email_verified_at = datetime.now(timezone.utc) if info.email_verified else None
+    new_user.is_active = True
+    new_user.failed_login_attempts = 0
+
+    uow._session.add(new_user)
+    return new_user
+
+
+def _redirect_error(settings: Settings, reason: str) -> RedirectResponse:
     return RedirectResponse(
         f"{settings.frontend_base_url}/login?error={reason}",
         status_code=302,
     )
-
-def _first(name: str | None) -> str:
-    if not name:
-        return ""
-    parts = name.strip().split()
-    return parts[0] if parts else ""
-
-def _last(name: str | None) -> str:
-    if not name:
-        return ""
-    parts = name.strip().split()
-    return " ".join(parts[1:]) if len(parts) > 1 else ""

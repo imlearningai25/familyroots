@@ -2,9 +2,23 @@
 
 from src.infrastructure.database.models.tenant import TenantModel
 from src.infrastructure.database.models.user import UserModel, UserOAuthProviderModel
+from src.infrastructure.database.models.collaboration import (
+    FamilyTreeModel,
+    TreeMemberModel,
+)
+from src.infrastructure.database.models.person import (
+    PersonModel,
+    FamilyGroupModel,
+    FamilyGroupMemberModel,
+)
 
 __all__ = [
     "TenantModel",
     "UserModel",
     "UserOAuthProviderModel",
+    "FamilyTreeModel",
+    "TreeMemberModel",
+    "PersonModel",
+    "FamilyGroupModel",
+    "FamilyGroupMemberModel",
 ]

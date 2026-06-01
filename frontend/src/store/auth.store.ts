@@ -66,12 +66,14 @@ export const useAuthStore = create<AuthStore>()(
 
 // ── Silent refresh helper (call once on app boot) ──────────────────────────
 
+const _API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+
 export async function initAuth(): Promise<void> {
   const store = useAuthStore.getState();
   if (store.isInitialised) return;
 
   try {
-    const res = await fetch('/api/v1/auth/refresh', {
+    const res = await fetch(`${_API_BASE}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',  // sends the httpOnly refresh_token cookie
     });

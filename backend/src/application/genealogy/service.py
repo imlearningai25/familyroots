@@ -239,6 +239,7 @@ class FamilyTreeApplicationService:
             await self._fg_repo.add_member(
                 family_group_id=membership.family_group_id,
                 person_id=membership.person_id,
+                tree_id=membership.tree_id,
                 tenant_id=tenant_id,
                 role=membership.role,
                 parentage_type=(

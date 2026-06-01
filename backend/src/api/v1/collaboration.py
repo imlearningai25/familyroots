@@ -38,6 +38,8 @@ class MemberResponse(BaseModel):
     user_id: uuid.UUID
     role: TreeRole
     joined_at: Optional[str]
+    email: str = ""
+    display_name: str = ""
 
     @classmethod
     def from_domain(cls, m: TreeMembership) -> "MemberResponse":
@@ -132,16 +134,243 @@ class PersonVersionResponse(BaseModel):
         )
 
 
+# ── Tree listing ───────────────────────────────────────────────────────────────
+
+class TreeSummaryResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: Optional[str]
+    role: TreeRole
+    person_count: int
+    member_count: int
+
+
+class CreateTreeRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+
+
+@router.post("/trees", response_model=TreeSummaryResponse, status_code=status.HTTP_201_CREATED, summary="Create a new family tree")
+async def create_tree(
+    body: CreateTreeRequest,
+    current_user: CurrentUserDep,
+    uow: UoWDep,
+) -> TreeSummaryResponse:
+    from sqlalchemy import text
+
+    tree_id = uuid.uuid4()
+
+    await uow._session.execute(text("""
+        INSERT INTO family_trees (id, tenant_id, name, description)
+        VALUES (:id, :tenant_id, :name, :description)
+    """), {"id": tree_id, "tenant_id": current_user.tenant_id, "name": body.name, "description": body.description})
+
+    await uow._session.execute(text("""
+        INSERT INTO tree_members (id, tree_id, user_id, tenant_id, role, joined_at)
+        VALUES (:id, :tree_id, :user_id, :tenant_id, 'OWNER', NOW())
+    """), {"id": uuid.uuid4(), "tree_id": tree_id, "user_id": current_user.id, "tenant_id": current_user.tenant_id})
+
+    return TreeSummaryResponse(
+        id=tree_id,
+        name=body.name,
+        description=body.description,
+        role=TreeRole.OWNER,
+        person_count=0,
+        member_count=1,
+    )
+
+
+@router.delete(
+    "/trees/{tree_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Soft-delete a tree (owner only)",
+)
+async def delete_tree(
+    tree_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    uow: UoWDep,
+) -> None:
+    from sqlalchemy import text
+
+    row = (await uow._session.execute(
+        text("SELECT role FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"),
+        {"tid": tree_id, "uid": current_user.id},
+    )).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tree not found")
+    if row.role != "OWNER":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the tree owner can delete this tree")
+
+    await uow._session.execute(
+        text("UPDATE family_trees SET is_deleted = true WHERE id = :tid"),
+        {"tid": tree_id},
+    )
+
+
+@router.get("/trees", response_model=list[TreeSummaryResponse], summary="List trees the current user belongs to")
+async def list_my_trees(
+    current_user: CurrentUserDep,
+    uow: UoWDep,
+) -> list[TreeSummaryResponse]:
+    from sqlalchemy import select, func, text
+    from sqlalchemy.sql import literal_column
+
+    # Trees where the current user is a member
+    q = text("""
+        SELECT
+            ft.id,
+            ft.name,
+            ft.description,
+            tm.role,
+            (SELECT COUNT(*) FROM persons p WHERE p.tree_id = ft.id AND p.is_deleted = false) AS person_count,
+            (SELECT COUNT(*) FROM tree_members m WHERE m.tree_id = ft.id) AS member_count
+        FROM family_trees ft
+        JOIN tree_members tm ON tm.tree_id = ft.id
+        WHERE tm.user_id = :user_id
+          AND ft.is_deleted = false
+        ORDER BY ft.created_at DESC
+    """)
+    result = await uow._session.execute(q, {"user_id": current_user.id})
+    rows = result.fetchall()
+    return [
+        TreeSummaryResponse(
+            id=row.id,
+            name=row.name,
+            description=row.description,
+            role=TreeRole(row.role),
+            person_count=row.person_count,
+            member_count=row.member_count,
+        )
+        for row in rows
+    ]
+
+
+# ── Tree graph ─────────────────────────────────────────────────────────────────
+
+@router.get("/trees/{tree_id}/graph", summary="Full person + family-group graph for canvas rendering")
+async def get_tree_graph(
+    tree_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    uow: UoWDep,
+) -> dict:
+    from sqlalchemy import text
+
+    # Verify membership
+    membership_q = text(
+        "SELECT 1 FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"
+    )
+    row = (await uow._session.execute(membership_q, {"tid": tree_id, "uid": current_user.id})).first()
+    if row is None:
+        raise HTTPException(403, "Not a member of this tree")
+
+    # Persons
+    persons_q = text("""
+        SELECT id, tree_id, display_given_name, display_surname,
+               sex, is_living, is_deceased
+        FROM persons
+        WHERE tree_id = :tid AND is_deleted = false
+        ORDER BY display_surname, display_given_name
+    """)
+    person_rows = (await uow._session.execute(persons_q, {"tid": tree_id})).fetchall()
+
+    persons = [
+        {
+            "id": str(r.id),
+            "treeId": str(r.tree_id),
+            "displayGivenName": r.display_given_name,
+            "displaySurname": r.display_surname,
+            "sex": r.sex,
+            "isLiving": r.is_living,
+            "isDeceased": r.is_deceased,
+        }
+        for r in person_rows
+    ]
+
+    # Family groups + members
+    fg_q = text("""
+        SELECT fg.id, fg.tree_id, fg.union_type,
+               fgm.person_id, fgm.role, fgm.parentage_type
+        FROM family_groups fg
+        LEFT JOIN family_group_members fgm ON fgm.family_group_id = fg.id
+        LEFT JOIN persons p ON p.id = fgm.person_id
+        WHERE fg.tree_id = :tid
+          AND (fgm.person_id IS NULL OR p.is_deleted = false)
+        ORDER BY fg.id
+    """)
+    fg_rows = (await uow._session.execute(fg_q, {"tid": tree_id})).fetchall()
+
+    groups: dict[str, dict] = {}
+    for r in fg_rows:
+        gid = str(r.id)
+        if gid not in groups:
+            groups[gid] = {
+                "id": gid,
+                "treeId": str(r.tree_id),
+                "unionType": r.union_type,
+                "parentIds": [],
+                "children": {},
+            }
+        if r.person_id is None:
+            continue
+        pid = str(r.person_id)
+        if r.role == "PARENT":
+            if pid not in groups[gid]["parentIds"]:
+                groups[gid]["parentIds"].append(pid)
+        elif r.role == "CHILD":
+            groups[gid]["children"][pid] = r.parentage_type or "BIOLOGICAL"
+
+    return {
+        "treeId": str(tree_id),
+        "persons": persons,
+        "familyGroups": list(groups.values()),
+    }
+
+
 # ── Members ────────────────────────────────────────────────────────────────────
 
 @router.get("/trees/{tree_id}/members", response_model=list[MemberResponse])
 async def list_members(
     tree_id: uuid.UUID,
     current_user: CurrentUserDep,
-    svc: CollabDep,
+    uow: UoWDep,
 ) -> list[MemberResponse]:
-    members = await svc.list_members(tree_id, current_user.id)
-    return [MemberResponse.from_domain(m) for m in members]
+    from sqlalchemy import text
+
+    # Verify caller is a member
+    check = (await uow._session.execute(
+        text("SELECT 1 FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"),
+        {"tid": tree_id, "uid": current_user.id},
+    )).first()
+    if check is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this tree")
+
+    rows = (await uow._session.execute(text("""
+        SELECT
+            tm.id, tm.tree_id, tm.user_id, tm.role, tm.joined_at,
+            u.email,
+            COALESCE(NULLIF(TRIM(CONCAT(u.given_name, ' ', u.family_name)), ''), u.email) AS display_name
+        FROM tree_members tm
+        JOIN users u ON u.id = tm.user_id
+        WHERE tm.tree_id = :tid
+        ORDER BY
+            CASE tm.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'EDITOR' THEN 2 ELSE 3 END,
+            tm.joined_at
+    """), {"tid": tree_id})).fetchall()
+
+    return [
+        MemberResponse(
+            id=r.id,
+            tree_id=r.tree_id,
+            user_id=r.user_id,
+            role=TreeRole(r.role),
+            joined_at=r.joined_at.isoformat() if r.joined_at else None,
+            email=r.email,
+            display_name=r.display_name,
+        )
+        for r in rows
+    ]
 
 
 @router.patch("/trees/{tree_id}/members/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT, response_model=None, response_class=Response)

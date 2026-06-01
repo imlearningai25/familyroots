@@ -32,6 +32,13 @@ class UserModel(Base, TenantMixin, TimestampMixin):
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
+    # Override TenantMixin.tenant_id to add the FK constraint SQLAlchemy needs
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     email: Mapped[str] = mapped_column(String(254), nullable=False, index=True)
     email_verified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
@@ -74,7 +81,7 @@ class UserModel(Base, TenantMixin, TimestampMixin):
         "TenantModel",
         back_populates="users",
         lazy="noload",
-        foreign_keys=[TenantMixin.tenant_id],
+        foreign_keys="[UserModel.tenant_id]",
     )
     oauth_providers: Mapped[list["UserOAuthProviderModel"]] = relationship(
         "UserOAuthProviderModel",

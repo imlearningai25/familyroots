@@ -18,10 +18,11 @@ import { AuthGuard, GuestGuard } from './guards/AuthGuard';
 
 // ── Lazy pages ─────────────────────────────────────────────────────────────
 
-const LoginPage          = lazy(() => import('@pages/auth/LoginPage'));
-const RegisterPage       = lazy(() => import('@pages/auth/RegisterPage'));
-const OAuthCallbackPage  = lazy(() => import('@pages/auth/OAuthCallbackPage'));
-const ResetPasswordPage  = lazy(() => import('@pages/auth/ResetPasswordPage'));
+const LoginPage           = lazy(() => import('@pages/auth/LoginPage'));
+const RegisterPage        = lazy(() => import('@pages/auth/RegisterPage'));
+const OAuthCallbackPage   = lazy(() => import('@pages/auth/OAuthCallbackPage'));
+const ForgotPasswordPage  = lazy(() => import('@pages/auth/ForgotPasswordPage'));
+const ResetPasswordPage   = lazy(() => import('@pages/auth/ResetPasswordPage'));
 
 const DashboardPage      = lazy(() => import('@pages/DashboardPage'));
 const FamilyTreePage     = lazy(() => import('@pages/FamilyTreePage'));
@@ -55,9 +56,10 @@ const router = createBrowserRouter([
   {
     element: <GuestGuard />,
     children: [
-      { path: '/login',          element: <Lazy><LoginPage /></Lazy> },
-      { path: '/register',       element: <Lazy><RegisterPage /></Lazy> },
-      { path: '/reset-password', element: <Lazy><ResetPasswordPage /></Lazy> },
+      { path: '/login',            element: <Lazy><LoginPage /></Lazy> },
+      { path: '/register',         element: <Lazy><RegisterPage /></Lazy> },
+      { path: '/forgot-password',  element: <Lazy><ForgotPasswordPage /></Lazy> },
+      { path: '/reset-password',   element: <Lazy><ResetPasswordPage /></Lazy> },
     ],
   },
 

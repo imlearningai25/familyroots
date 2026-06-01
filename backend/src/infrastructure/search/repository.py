@@ -123,54 +123,43 @@ class SearchRepository:
     async def _fts_query(
         self, q: NameSearchQuery, raw: str
     ) -> list[PersonSearchHit]:
-        # Build tsquery — use plainto_tsquery for phrase, prefix for partial
-        tsq_expr = "plainto_tsquery('simple', unaccent(:raw))"
+        words = raw.split()
+        last_word_prefix = words[-1] + ":*" if words else raw + ":*"
+
+        # Build the tsquery inside a CTE so the || operator is valid SQL
         if not raw.endswith(" "):
-            # Also try prefix query for the last word
-            tsq_expr = (
-                "plainto_tsquery('simple', unaccent(:raw)) || "
-                "to_tsquery('simple', unaccent(:prefix_raw))"
-            )
+            tsq_cte = "SELECT plainto_tsquery('simple', unaccent(:raw)) || to_tsquery('simple', unaccent(:prefix_raw)) AS v"
+        else:
+            tsq_cte = "SELECT plainto_tsquery('simple', unaccent(:raw)) AS v"
 
         tree_filter = "AND p.tree_id = :tree_id" if q.tree_id else ""
-        birth_min   = "AND p.birth_year >= :birth_year_min" if q.birth_year_min else ""
-        birth_max   = "AND p.birth_year <= :birth_year_max" if q.birth_year_max else ""
 
         order_clause = {
-            SortOrder.RELEVANCE:  "score DESC, p.surname, p.given_name",
-            SortOrder.NAME:       "p.surname, p.given_name",
-            SortOrder.BIRTH_YEAR: "p.birth_year NULLS LAST",
+            SortOrder.RELEVANCE:  "score DESC, p.display_surname, p.display_given_name",
+            SortOrder.NAME:       "p.display_surname, p.display_given_name",
+            SortOrder.BIRTH_YEAR: "p.display_surname, p.display_given_name",
             SortOrder.UPDATED_AT: "p.updated_at DESC",
         }.get(q.sort, "score DESC")
 
         sql = text(f"""
+            WITH _tsq AS ({tsq_cte})
             SELECT
                 p.id,
                 p.tree_id,
-                p.given_name,
-                p.surname,
-                p.maiden_name,
-                p.birth_year,
-                p.death_year,
-                p.birth_place,
+                p.display_given_name AS given_name,
+                p.display_surname    AS surname,
                 p.is_living,
-                ts_rank_cd(p.search_vector, tsq, 32) AS score
+                ts_rank_cd(p.search_vector, _tsq.v, 32) AS score
             FROM
-                persons p,
-                {tsq_expr} AS tsq
+                persons p, _tsq
             WHERE
                 p.tenant_id = :tenant_id
                 AND p.is_deleted = FALSE
-                AND p.search_vector @@ tsq
+                AND p.search_vector @@ _tsq.v
                 {tree_filter}
-                {birth_min}
-                {birth_max}
             ORDER BY {order_clause}
             LIMIT :limit OFFSET :offset
         """)
-
-        words = raw.split()
-        last_word_prefix = words[-1] + ":*" if words else raw + ":*"
 
         params: dict = {
             "tenant_id": str(q.tenant_id),
@@ -181,10 +170,6 @@ class SearchRepository:
         }
         if q.tree_id:
             params["tree_id"] = str(q.tree_id)
-        if q.birth_year_min:
-            params["birth_year_min"] = q.birth_year_min
-        if q.birth_year_max:
-            params["birth_year_max"] = q.birth_year_max
 
         rows = (await self._session.execute(sql, params)).fetchall()
         return [_row_to_person_hit(r) for r in rows]
@@ -199,26 +184,22 @@ class SearchRepository:
             SELECT
                 p.id,
                 p.tree_id,
-                p.given_name,
-                p.surname,
-                p.maiden_name,
-                p.birth_year,
-                p.death_year,
-                p.birth_place,
+                p.display_given_name AS given_name,
+                p.display_surname    AS surname,
                 p.is_living,
                 greatest(
-                    similarity(coalesce(p.given_name,'') || ' ' || coalesce(p.surname,''), :raw),
-                    similarity(coalesce(p.surname,''), :raw),
-                    similarity(coalesce(p.given_name,''), :raw)
+                    similarity(coalesce(p.display_given_name,'') || ' ' || coalesce(p.display_surname,''), :raw),
+                    similarity(coalesce(p.display_surname,''), :raw),
+                    similarity(coalesce(p.display_given_name,''), :raw)
                 ) AS score
             FROM persons p
             WHERE
                 p.tenant_id = :tenant_id
                 AND p.is_deleted = FALSE
                 AND greatest(
-                    similarity(coalesce(p.given_name,'') || ' ' || coalesce(p.surname,''), :raw),
-                    similarity(coalesce(p.surname,''), :raw),
-                    similarity(coalesce(p.given_name,''), :raw)
+                    similarity(coalesce(p.display_given_name,'') || ' ' || coalesce(p.display_surname,''), :raw),
+                    similarity(coalesce(p.display_surname,''), :raw),
+                    similarity(coalesce(p.display_given_name,''), :raw)
                 ) > 0.25
                 {tree_filter}
             ORDER BY score DESC
@@ -490,8 +471,8 @@ class SearchRepository:
         fg_to_persons: dict[str, list[str]] = defaultdict(list)
 
         for r in rows:
-            person_to_fgs[r.person_id].append((r.family_group_id, r.role))
-            fg_to_persons[r.family_group_id].append(r.person_id)
+            person_to_fgs[str(r.person_id)].append((str(r.family_group_id), r.role))
+            fg_to_persons[str(r.family_group_id)].append(str(r.person_id))
 
         # BFS from p1 toward p2
         start = str(q.person_id_1)
@@ -543,9 +524,9 @@ class SearchRepository:
 
         # Fetch names for path nodes
         name_sql = text("""
-            SELECT id, given_name, surname
+            SELECT id, display_given_name AS given_name, display_surname AS surname
             FROM persons
-            WHERE id = ANY(:ids)
+            WHERE id = ANY(:ids::uuid[])
         """)
         name_rows = (await self._session.execute(
             name_sql, {"ids": path_ids}
@@ -667,12 +648,12 @@ def _row_to_person_hit(r) -> PersonSearchHit:
     return PersonSearchHit(
         person_id=uuid.UUID(str(r.id)),
         tree_id=uuid.UUID(str(r.tree_id)),
-        given_name=r.given_name,
-        surname=r.surname,
-        maiden_name=r.maiden_name,
-        birth_year=r.birth_year,
-        death_year=r.death_year,
-        birth_place=r.birth_place,
+        given_name=r.given_name or None,
+        surname=r.surname or None,
+        maiden_name=None,
+        birth_year=None,
+        death_year=None,
+        birth_place=None,
         is_living=r.is_living,
         score=float(r.score or 0),
     )
@@ -708,14 +689,21 @@ def _ancestor_to_dict(a: AncestorHit) -> dict:
 
 
 def _degree_to_label(distance: int) -> str:
-    """Rough heuristic label based on graph distance (hops through family groups)."""
+    """
+    Heuristic label based on BFS hops through family groups.
+    Each hop = one person-to-person step through a shared family group.
+      1 hop : parent / child / sibling / spouse
+      2 hops: grandparent, grandchild, uncle, aunt, nephew, niece, step-sibling
+      3 hops: great-grandparent/child, 1st cousin, great-uncle/aunt/nephew/niece
+      4 hops: 2×great-grandparent/child, 1st cousin once removed, 2nd cousin
+    """
     labels = {
         0: "Same person",
-        1: "Spouse or sibling",
-        2: "Parent, child, or step-sibling",
-        3: "Grandparent/grandchild or aunt/uncle",
-        4: "1st cousin or great-grandparent/child",
-        5: "1st cousin once removed",
-        6: "2nd cousin",
+        1: "Parent, child, sibling, or spouse",
+        2: "Grandparent/grandchild or uncle/aunt/nephew/niece",
+        3: "Great-grandparent/grandchild or 1st cousin",
+        4: "1st cousin once removed or 2×great-grandparent/grandchild",
+        5: "2nd cousin or 2×great-grandparent once removed",
+        6: "2nd cousin once removed",
     }
-    return labels.get(distance, f"Distant relative ({distance} hops)")
+    return labels.get(distance, f"Distant relative ({distance} steps)")

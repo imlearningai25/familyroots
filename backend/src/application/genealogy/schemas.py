@@ -26,6 +26,14 @@ class CreatePersonRequest(BaseModel):
     is_living: bool = True
 
 
+class UpdatePersonRequest(BaseModel):
+    given_name: str = Field(default="", max_length=200)
+    surname: str = Field(default="", max_length=200)
+    sex: Sex = Sex.UNKNOWN
+    is_living: bool = True
+    is_deceased: bool = False
+
+
 class PersonResponse(BaseModel):
     id: uuid.UUID
     tree_id: uuid.UUID

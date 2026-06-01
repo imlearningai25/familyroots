@@ -88,6 +88,7 @@ class SqlAlchemyFamilyGroupRepository(SqlAlchemyRepository[FamilyGroupModel]):
         self,
         family_group_id: uuid.UUID,
         person_id: uuid.UUID,
+        tree_id: uuid.UUID,
         tenant_id: uuid.UUID,
         role: str,
         parentage_type: str | None = None,
@@ -95,6 +96,7 @@ class SqlAlchemyFamilyGroupRepository(SqlAlchemyRepository[FamilyGroupModel]):
         member = FamilyGroupMemberModel(
             family_group_id=family_group_id,
             person_id=person_id,
+            tree_id=tree_id,
             tenant_id=tenant_id,
             role=role,
             parentage_type=parentage_type,

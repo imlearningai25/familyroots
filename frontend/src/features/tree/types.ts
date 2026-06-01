@@ -87,12 +87,14 @@ export interface FamilyGroupNodeData {
 export interface UnionEdgeData {
   kind: 'union';
   unionType: UnionType;
+  isHighlighted?: boolean;
 }
 
 /** Edge from a FamilyGroup to a Person (as a child member) */
 export interface ParentChildEdgeData {
   kind: 'parent-child';
   parentageType: ParentageType;
+  isHighlighted?: boolean;
 }
 
 // ── React Flow node / edge aliases ─────────────────────────────────────────
@@ -101,8 +103,8 @@ export type PersonRFNode = Node<PersonNodeData, 'person'>;
 export type FamilyGroupRFNode = Node<FamilyGroupNodeData, 'family-group'>;
 export type TreeNode = PersonRFNode | FamilyGroupRFNode;
 
-export type UnionRFEdge = Edge<UnionEdgeData, 'union'>;
-export type ParentChildRFEdge = Edge<ParentChildEdgeData, 'parent-child'>;
+export type UnionRFEdge = Edge<UnionEdgeData>;
+export type ParentChildRFEdge = Edge<ParentChildEdgeData>;
 export type TreeEdge = UnionRFEdge | ParentChildRFEdge;
 
 // ── API response shape (mirrors backend schemas) ───────────────────────────

@@ -15,6 +15,33 @@ from src.domain.collaboration.entities import (
 )
 
 
+class FamilyTreeModel(Base, TimestampMixin):
+    """Maps to the `family_trees` table.
+
+    Declared here so SQLAlchemy's metadata knows about this table and can
+    resolve ForeignKey('family_trees.id') references in PersonModel,
+    FamilyGroupModel, FamilyGroupMemberModel, and TreeMemberModel.
+    """
+
+    __tablename__ = "family_trees"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+    def __repr__(self) -> str:
+        return f"<FamilyTreeModel id={self.id!s} name={self.name!r}>"
+
+
 class TreeMemberModel(Base, TimestampMixin):
     """One user's membership in one tree."""
 

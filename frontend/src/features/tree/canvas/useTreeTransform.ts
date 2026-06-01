@@ -90,7 +90,7 @@ export function transformGraphToFlow(
       treeId: fg.treeId,
       unionType: fg.unionType,
       parentIds: fg.parentIds,
-      showUnionIcon: fg.unionType !== 'UNKNOWN',
+      showUnionIcon: fg.unionType !== 'UNKNOWN' && fg.parentIds.length >= 2,
     };
 
     return {
@@ -100,8 +100,8 @@ export function transformGraphToFlow(
       data,
       width: FAMILY_NODE_SIZE,
       height: FAMILY_NODE_SIZE,
-      draggable: false, // family group nodes follow their parents
-      selectable: false,
+      draggable: false,
+      selectable: true,
     };
   });
 

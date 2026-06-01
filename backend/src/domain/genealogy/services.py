@@ -46,6 +46,7 @@ class AddPersonToFamilyGroupCommand:
     """Instruct the repo to add a person to a family group."""
     family_group_id: uuid.UUID
     person_id: uuid.UUID
+    tree_id: uuid.UUID
     role: str                       # "PARENT" | "CHILD"
     parentage_type: ParentageType = ParentageType.BIOLOGICAL
 
@@ -150,6 +151,7 @@ class FamilyTreeDomainService:
             result.memberships.append(AddPersonToFamilyGroupCommand(
                 family_group_id=fg_id,
                 person_id=child_id,
+                tree_id=tree_id,
                 role="CHILD",
                 parentage_type=parentage_type,
             ))
@@ -157,6 +159,7 @@ class FamilyTreeDomainService:
         result.memberships.append(AddPersonToFamilyGroupCommand(
             family_group_id=fg_id,
             person_id=parent_id,
+            tree_id=tree_id,
             role="PARENT",
         ))
 
@@ -208,18 +211,21 @@ class FamilyTreeDomainService:
             result.memberships.append(AddPersonToFamilyGroupCommand(
                 family_group_id=fg_id,
                 person_id=parent_id,
+                tree_id=tree_id,
                 role="PARENT",
             ))
             if other_parent_id is not None:
                 result.memberships.append(AddPersonToFamilyGroupCommand(
                     family_group_id=fg_id,
                     person_id=other_parent_id,
+                    tree_id=tree_id,
                     role="PARENT",
                 ))
 
         result.memberships.append(AddPersonToFamilyGroupCommand(
             family_group_id=fg_id,
             person_id=child_id,
+            tree_id=tree_id,
             role="CHILD",
             parentage_type=parentage_type,
         ))
@@ -257,10 +263,10 @@ class FamilyTreeDomainService:
             ),
             memberships=[
                 AddPersonToFamilyGroupCommand(
-                    family_group_id=fg_id, person_id=person1_id, role="PARENT"
+                    family_group_id=fg_id, person_id=person1_id, tree_id=tree_id, role="PARENT"
                 ),
                 AddPersonToFamilyGroupCommand(
-                    family_group_id=fg_id, person_id=person2_id, role="PARENT"
+                    family_group_id=fg_id, person_id=person2_id, tree_id=tree_id, role="PARENT"
                 ),
             ],
         )
@@ -307,6 +313,7 @@ class FamilyTreeDomainService:
             result.memberships.append(AddPersonToFamilyGroupCommand(
                 family_group_id=fg_id,
                 person_id=person_id,
+                tree_id=tree_id,
                 role="CHILD",
                 parentage_type=parentage_type,
             ))
@@ -314,6 +321,7 @@ class FamilyTreeDomainService:
         result.memberships.append(AddPersonToFamilyGroupCommand(
             family_group_id=fg_id,
             person_id=sibling_id,
+            tree_id=tree_id,
             role="CHILD",
             parentage_type=parentage_type,
         ))

@@ -34,33 +34,27 @@ function UnionEdgeComponent({
   targetPosition,
   data,
 }: EdgeProps<UnionEdgeData>) {
-  const unionType = data?.unionType ?? 'UNKNOWN';
-  const color = UNION_COLORS[unionType];
-  const dashArray = UNION_STROKE[unionType];
-  const isSolid = dashArray === 'solid';
+  const unionType  = data?.unionType ?? 'UNKNOWN';
+  const color      = UNION_COLORS[unionType];
+  const dashArray  = UNION_STROKE[unionType];
+  const isSolid    = dashArray === 'solid';
   const isMarriage = unionType === 'MARRIAGE';
+
+  const hl         = data?.isHighlighted;
+  const opacity    = hl === true ? 1 : hl === false ? 0.15 : 1;
+  const strokeW    = hl === true ? 2.5 : 1.5;
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
   if (isMarriage) {
-    // Double line for marriage: two parallel SVG paths offset by 2px
-    const [pathA] = getStraightPath({
-      sourceX: sourceX - 1.5,
-      sourceY,
-      targetX: targetX - 1.5,
-      targetY,
-    });
-    const [pathB] = getStraightPath({
-      sourceX: sourceX + 1.5,
-      sourceY,
-      targetX: targetX + 1.5,
-      targetY,
-    });
+    const offset = hl === true ? 2 : 1.5;
+    const [pathA] = getStraightPath({ sourceX: sourceX - offset, sourceY, targetX: targetX - offset, targetY });
+    const [pathB] = getStraightPath({ sourceX: sourceX + offset, sourceY, targetX: targetX + offset, targetY });
 
     return (
-      <g>
-        <path d={pathA} stroke={color} strokeWidth={1.5} fill="none" />
-        <path d={pathB} stroke={color} strokeWidth={1.5} fill="none" />
+      <g style={{ opacity, transition: 'opacity 0.25s' }}>
+        <path d={pathA} stroke={color} strokeWidth={strokeW} fill="none" style={{ transition: 'stroke-width 0.25s' }} />
+        <path d={pathB} stroke={color} strokeWidth={strokeW} fill="none" style={{ transition: 'stroke-width 0.25s' }} />
       </g>
     );
   }
@@ -71,8 +65,10 @@ function UnionEdgeComponent({
       path={edgePath}
       style={{
         stroke: color,
-        strokeWidth: 1.5,
+        strokeWidth: strokeW,
         strokeDasharray: isSolid ? undefined : dashArray,
+        opacity,
+        transition: 'stroke-width 0.25s, opacity 0.25s',
       }}
     />
   );

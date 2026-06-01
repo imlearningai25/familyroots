@@ -19,7 +19,8 @@ import {
 import type { ParentChildEdgeData } from '../../types';
 import { PARENTAGE_STROKE } from '../../types';
 
-const EDGE_COLOR = '#94a3b8'; // slate-400
+const EDGE_COLOR          = '#94a3b8'; // slate-400
+const EDGE_COLOR_HIGHLIGHT = '#3b82f6'; // blue-500
 
 const PARENTAGE_LABELS: Partial<Record<ParentChildEdgeData['parentageType'], string>> = {
   ADOPTIVE: 'adopted',
@@ -39,9 +40,15 @@ function ParentChildEdgeComponent({
   markerEnd,
 }: EdgeProps<ParentChildEdgeData>) {
   const parentageType = data?.parentageType ?? 'BIOLOGICAL';
-  const dashArray = PARENTAGE_STROKE[parentageType];
-  const label = PARENTAGE_LABELS[parentageType];
-  const isSolid = dashArray === 'solid';
+  const dashArray     = PARENTAGE_STROKE[parentageType];
+  const label         = PARENTAGE_LABELS[parentageType];
+  const isSolid       = dashArray === 'solid';
+
+  // undefined = no selection active (normal)
+  // true  = on the ancestor path (highlighted)
+  // false = a selection is active but this edge is NOT on the path (dimmed)
+  const hl      = data?.isHighlighted;
+  const opacity = hl === true ? 1 : hl === false ? 0.15 : 1;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -60,9 +67,11 @@ function ParentChildEdgeComponent({
         path={edgePath}
         markerEnd={markerEnd}
         style={{
-          stroke: EDGE_COLOR,
-          strokeWidth: 1.5,
+          stroke: hl === true ? EDGE_COLOR_HIGHLIGHT : EDGE_COLOR,
+          strokeWidth: hl === true ? 3 : 1.5,
           strokeDasharray: isSolid ? undefined : dashArray,
+          opacity,
+          transition: 'stroke 0.25s, stroke-width 0.25s, opacity 0.25s',
         }}
       />
 

@@ -44,14 +44,12 @@ export default function LoginPage() {
     try {
       const data = await login(email, password);
       storeLogin(data.access_token, {
-        id: data.user.id,
-        tenantId: data.user.tenant_id,
-        email: data.user.email,
-        displayName:
-          `${data.user.display_given_name ?? ''} ${data.user.display_surname ?? ''}`.trim() ||
-          data.user.email,
-        avatarUrl: data.user.avatar_url,
-        isEmailVerified: data.user.is_email_verified,
+        id: data.user_id,
+        tenantId: data.tenant_id,
+        email,
+        displayName: email,
+        avatarUrl: undefined,
+        isEmailVerified: true,
       });
       const next = searchParams.get('next') ?? '/dashboard';
       navigate(next, { replace: true });

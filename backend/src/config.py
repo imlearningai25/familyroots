@@ -7,7 +7,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     jwt_refresh_token_remember_me_days: int = 90
 
     # ── CORS ─────────────────────────────────────────────────
-    cors_origins: list[AnyHttpUrl] = Field(default_factory=list)
+    cors_origins: list[str] = Field(default_factory=list)
     cors_allow_credentials: bool = True
 
     # ── AWS / S3 ─────────────────────────────────────────────
@@ -61,13 +61,19 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"
     s3_bucket: str = "familyroots-media"
+    s3_endpoint_url: str = ""          # override for MinIO / localstack
     s3_presigned_url_expire_seconds: int = 900
 
     # ── OAuth ────────────────────────────────────────────────
     google_client_id: str = ""
     google_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
     facebook_app_id: str = ""
     facebook_app_secret: str = ""
+    api_base_url: str = "http://localhost:8000"
+    frontend_base_url: str = "http://localhost:5173"
+    default_tenant_id: str = ""
 
     # ── Email ────────────────────────────────────────────────
     smtp_host: str = "localhost"

@@ -36,16 +36,32 @@ function filterByExpanded(
       .map((n) => n.id)
   );
 
-  // A family group node is visible if any of its parent persons is visible
-  const visibleFamilyGroupIds = new Set(
-    nodes
-      .filter(
-        (n) =>
-          n.type === 'family-group' &&
-          (n.data as any).parentIds.some((pid: string) => visiblePersonIds.has(pid))
-      )
-      .map((n) => n.id)
+  // A family group is visible if at least one of its parent persons is visible
+  const candidateFamilyGroups = nodes.filter(
+    (n) =>
+      n.type === 'family-group' &&
+      (n.data as any).parentIds.some((pid: string) => visiblePersonIds.has(pid))
   );
+
+  // Deduplicate: for each unique set of visible parents, keep only one family group.
+  // When there are multiple, prefer the one with the most children (most parent-child edges).
+  const childCountOf = (fgId: string) =>
+    edges.filter((e) => e.source === fgId && (e.data as any)?.kind === 'parent-child').length;
+
+  const parentKeyToFgId = new Map<string, string>();
+  for (const n of candidateFamilyGroups) {
+    const key = [...((n.data as any).parentIds as string[])]
+      .filter((pid) => visiblePersonIds.has(pid))
+      .sort()
+      .join('|');
+    if (!key) continue;
+    const existing = parentKeyToFgId.get(key);
+    if (!existing || childCountOf(n.id) > childCountOf(existing)) {
+      parentKeyToFgId.set(key, n.id);
+    }
+  }
+
+  const visibleFamilyGroupIds = new Set(parentKeyToFgId.values());
 
   const visibleIds = new Set([...visiblePersonIds, ...visibleFamilyGroupIds]);
 

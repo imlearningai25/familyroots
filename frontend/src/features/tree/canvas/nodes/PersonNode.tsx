@@ -91,7 +91,7 @@ function formatDates(
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-function PersonNodeComponent({ data, selected }: NodeProps<PersonNodeData>) {
+function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeData>) {
   const {
     personId,
     displayGivenName,
@@ -114,7 +114,7 @@ function PersonNodeComponent({ data, selected }: NodeProps<PersonNodeData>) {
   const handleExpandDown = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      toggleExpand(personId, 'children');
+      toggleExpand?.(personId, 'children');
     },
     [personId, toggleExpand]
   );
@@ -122,7 +122,7 @@ function PersonNodeComponent({ data, selected }: NodeProps<PersonNodeData>) {
   const handleExpandUp = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      toggleExpand(personId, 'parents');
+      toggleExpand?.(personId, 'parents');
     },
     [personId, toggleExpand]
   );
@@ -143,8 +143,18 @@ function PersonNodeComponent({ data, selected }: NodeProps<PersonNodeData>) {
 
       <div
         onClick={handleClick}
-        className="relative cursor-pointer transition-shadow"
-        style={{ width: PERSON_NODE_WIDTH, height: PERSON_NODE_HEIGHT }}
+        style={{
+          width: PERSON_NODE_WIDTH,
+          height: PERSON_NODE_HEIGHT,
+          position: 'relative',
+          cursor: dragging ? 'grabbing' : 'grab',
+          // Scale up while grabbed; spring-overshoot back to 1 on release
+          transform: dragging ? 'scale(1.06)' : 'scale(1)',
+          transition: dragging
+            ? 'box-shadow 0.1s ease, transform 0.1s ease'
+            : 'transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease',
+          zIndex: dragging ? 999 : undefined,
+        }}
       >
         {/* Expand parents button */}
         {hasHiddenParents && (
@@ -157,7 +167,9 @@ function PersonNodeComponent({ data, selected }: NodeProps<PersonNodeData>) {
           style={{
             background: bgColor,
             border: `2px solid ${selected ? borderColor : isFocus ? borderColor : '#e2e8f0'}`,
-            boxShadow: selected
+            boxShadow: dragging
+              ? `0 16px 40px rgba(0,0,0,0.22), 0 0 0 2px ${borderColor}66`
+              : selected
               ? `0 0 0 3px ${borderColor}33, 0 4px 12px ${borderColor}22`
               : isFocus
               ? `0 0 0 2px ${borderColor}44`

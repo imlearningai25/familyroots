@@ -55,32 +55,42 @@ function FamilyGroupNodeComponent({ data, selected }: NodeProps<FamilyGroupNodeD
       />
 
       <div
-        className="relative flex items-center justify-center rounded-full transition-all select-none"
+        className="relative flex items-center justify-center rounded-full transition-all select-none group/fg"
         style={{
           width: FAMILY_NODE_SIZE,
           height: FAMILY_NODE_SIZE,
           background: 'white',
           border: `2px solid ${selected ? color : color + '99'}`,
           boxShadow: selected
-            ? `0 0 0 3px ${color}33`
+            ? `0 0 0 4px ${color}33`
             : `0 1px 3px rgba(0,0,0,0.1)`,
+          cursor: 'pointer',
         }}
+        title="Click to add a child to this union"
       >
-        {showUnionIcon && (
-          <span className="text-[8px] leading-none" title={unionType}>
-            {unionType === 'UNKNOWN' ? (
-              <span style={{ color, fontSize: 10 }}>○</span>
-            ) : (
-              icon
-            )}
-          </span>
-        )}
-        {!showUnionIcon && (
-          <div
-            className="w-2 h-2 rounded-full"
-            style={{ background: color }}
-          />
-        )}
+        {/* Normal icon */}
+        <span
+          className="transition-opacity group-hover/fg:opacity-0"
+          style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {showUnionIcon ? (
+            <span className="text-[8px] leading-none">
+              {unionType === 'UNKNOWN' ? (
+                <span style={{ color, fontSize: 10 }}>○</span>
+              ) : icon}
+            </span>
+          ) : (
+            <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+          )}
+        </span>
+
+        {/* Hover: show + */}
+        <span
+          className="opacity-0 group-hover/fg:opacity-100 transition-opacity font-bold leading-none"
+          style={{ fontSize: 14, color, position: 'absolute' }}
+        >
+          +
+        </span>
       </div>
 
       {/* Children connect out from bottom */}

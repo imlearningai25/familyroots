@@ -50,7 +50,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(o) for o in settings.cors_origins],
+        allow_origins=[o.rstrip('/') for o in settings.cors_origins],
         allow_credentials=settings.cors_allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],

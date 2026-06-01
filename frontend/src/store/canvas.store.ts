@@ -42,6 +42,10 @@ interface CanvasStore {
 
   setSetSelectedPersonId: (fn: (id: string | null) => void) => void;
 
+  // ── Layout position reset (incremented to tell canvas to snap back) ──
+  layoutResetKey: number;
+  bumpLayoutReset: () => void;
+
   // ── Reset ─────────────────────────────────────────────────────────────
   reset: () => void;
 }
@@ -55,6 +59,7 @@ const initialState = {
   pan: { x: 0, y: 0 },
   expandedNodeIds: new Set<string>(),
   toggleExpand: null,
+  layoutResetKey: 0,
 };
 
 export const useCanvasStore = create<CanvasStore>()(
@@ -70,6 +75,7 @@ export const useCanvasStore = create<CanvasStore>()(
       setPan: (pan) => set({ pan }),
       setExpandedNodeIds: (ids) => set({ expandedNodeIds: ids }),
       setToggleExpand: (fn) => set({ toggleExpand: fn }),
+      bumpLayoutReset: () => set((s) => ({ layoutResetKey: s.layoutResetKey + 1 })),
       setSetSelectedPersonId: (_fn) => {
         // The store itself manages selectedPersonId; this is a no-op stub.
         // PersonNode calls useCanvasStore((s) => s.setSelectedPersonId) directly.

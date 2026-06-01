@@ -107,10 +107,7 @@ class AuthService:
             if user.is_locked:
                 assert user.locked_until is not None
                 retry_in = int((user.locked_until - datetime.now(tz=timezone.utc)).total_seconds())
-                raise AccountLockedError(
-                    "Account temporarily locked due to too many failed attempts",
-                    retry_after_seconds=retry_in,
-                )
+                raise AccountLockedError(retry_after_seconds=retry_in)
 
             # 3. Verify password
             if not user.password_hash or not self._hasher.verify(req.password, user.password_hash):
@@ -118,11 +115,11 @@ class AuthService:
                 if user.failed_login_attempts >= _MAX_FAILED_ATTEMPTS:
                     user.locked_until = datetime.now(tz=timezone.utc) + _LOCK_DURATION
                 await self._uow.users.update(user)
-                raise InvalidCredentialsError("Invalid email or password")
+                raise InvalidCredentialsError()
 
             # 4. Check email verification
             if not user.email_verified:
-                raise AccountNotVerifiedError("Please verify your email before logging in")
+                raise AccountNotVerifiedError()
 
             # 5. Reset failure counter, update last login
             user.failed_login_attempts = 0
@@ -208,7 +205,7 @@ class AuthService:
                 raise TokenInvalidError("Invalid or expired reset token")
 
             if user.password_reset_expires_at < datetime.now(tz=timezone.utc):
-                raise TokenExpiredError("Password reset token has expired")
+                raise TokenExpiredError()
 
             user.password_hash = self._hasher.hash(new_password)
             user.password_reset_token = None
@@ -246,7 +243,7 @@ class AuthService:
         user = result.scalars().first()
 
         if user is None and raise_if_missing:
-            raise InvalidCredentialsError("Invalid email or password")
+            raise InvalidCredentialsError()
         return user
 
     async def _issue_tokens(

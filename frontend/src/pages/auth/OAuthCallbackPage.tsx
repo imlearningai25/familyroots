@@ -53,10 +53,10 @@ export default function OAuthCallbackPage() {
           tenantId: user.tenant_id,
           email: user.email,
           displayName:
-            `${user.display_given_name ?? ''} ${user.display_surname ?? ''}`.trim() ||
+            `${user.given_name ?? ''} ${user.family_name ?? ''}`.trim() ||
             user.email,
           avatarUrl: user.avatar_url,
-          isEmailVerified: user.is_email_verified,
+          isEmailVerified: user.email_verified,
         });
         // Drop token from URL, go to dashboard
         navigate('/dashboard', { replace: true });

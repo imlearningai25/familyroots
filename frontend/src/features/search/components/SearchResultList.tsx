@@ -3,7 +3,7 @@
  * Reads ?q from the URL, supports filter panel, pagination.
  */
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useNameSearch } from '../useSearch';
 import type { PersonHit, SearchFilters } from '../types';
 
@@ -14,6 +14,7 @@ interface Props {
 export function SearchResultList({ treeId }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const q       = searchParams.get('q') ?? '';
   const page    = parseInt(searchParams.get('page') ?? '1', 10);
@@ -91,7 +92,10 @@ export function SearchResultList({ treeId }: Props) {
           <ResultItem
             key={hit.person_id}
             hit={hit}
-            onClick={() => navigate(`/trees/${hit.tree_id}/persons/${hit.person_id}`)}
+            onClick={() => navigate(
+              `/trees/${hit.tree_id}/persons/${hit.person_id}`,
+              { state: { from: 'search', searchUrl: location.pathname + location.search } },
+            )}
           />
         ))}
       </ul>
@@ -162,20 +166,6 @@ function formatLifespan(hit: PersonHit): string {
 function FilterBar({ filters, onChange }: { filters: SearchFilters; onChange: (f: SearchFilters) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <input
-        type="number"
-        placeholder="Born after"
-        value={filters.birth_year_min ?? ''}
-        onChange={(e) => onChange({ ...filters, birth_year_min: e.target.value ? parseInt(e.target.value) : undefined })}
-        className="w-28 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-      />
-      <input
-        type="number"
-        placeholder="Born before"
-        value={filters.birth_year_max ?? ''}
-        onChange={(e) => onChange({ ...filters, birth_year_max: e.target.value ? parseInt(e.target.value) : undefined })}
-        className="w-28 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-      />
       <label className="flex items-center gap-1.5 text-sm text-gray-600">
         <input
           type="checkbox"

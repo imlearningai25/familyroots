@@ -16,7 +16,12 @@ class TenantModel(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    users: Mapped[list["UserModel"]] = relationship("UserModel", back_populates="tenant", lazy="noload")
+    users: Mapped[list["UserModel"]] = relationship(
+        "UserModel",
+        back_populates="tenant",
+        lazy="noload",
+        foreign_keys="[UserModel.tenant_id]",
+    )
 
     def __repr__(self) -> str:
         return f"<TenantModel id={self.id!s} slug={self.slug!r}>"
