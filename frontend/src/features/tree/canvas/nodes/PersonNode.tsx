@@ -9,7 +9,7 @@
  *   └──────────────────────────┘
  */
 
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { PersonNodeData } from '../../types';
 import {
@@ -19,6 +19,7 @@ import {
   PERSON_NODE_HEIGHT,
 } from '../../types';
 import { useCanvasStore } from '@store/canvas.store';
+import { useThemeStore } from '@store/theme.store';
 
 // ── Avatar ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,9 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
   } = data;
 
   const toggleExpand = useCanvasStore((s) => s.toggleExpand);
-  const setSelected = useCanvasStore((s) => s.setSelectedPersonId);
+  const setSelected  = useCanvasStore((s) => s.setSelectedPersonId);
+  const theme        = useThemeStore((s) => s.theme);
+  const [hovered, setHovered] = useState(false);
 
   const handleExpandDown = useCallback(
     (e: React.MouseEvent) => {
@@ -132,7 +135,10 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
   }, [personId, setSelected]);
 
   const borderColor = SEX_BORDER_COLOR[sex];
-  const bgColor = SEX_BG_COLOR[sex];
+  // Classic preset keeps sex-coded tint; other presets use theme nodeBg
+  const cardBg = theme.preset === 'classic'
+    ? (hovered ? theme.nodeHoverBg : SEX_BG_COLOR[sex])
+    : (hovered ? theme.nodeHoverBg : theme.nodeBg);
   const fullName = [displayGivenName, displaySurname].filter(Boolean).join(' ') || 'Unknown';
   const dates = formatDates(birthYear, deathYear, isLiving && !isDeceased);
 
@@ -143,6 +149,8 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
 
       <div
         onClick={handleClick}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
           width: PERSON_NODE_WIDTH,
           height: PERSON_NODE_HEIGHT,
@@ -165,8 +173,8 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
         <div
           className="w-full h-full rounded-xl flex items-center gap-3 px-3 transition-all"
           style={{
-            background: bgColor,
-            border: `2px solid ${selected ? borderColor : isFocus ? borderColor : '#e2e8f0'}`,
+            background: cardBg,
+            border: `2px solid ${selected ? borderColor : isFocus ? borderColor : theme.nodeBorder}`,
             boxShadow: dragging
               ? `0 16px 40px rgba(0,0,0,0.22), 0 0 0 2px ${borderColor}66`
               : selected
@@ -190,11 +198,11 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
           />
 
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-slate-800 text-sm leading-tight truncate">
+            <div className="font-semibold text-sm leading-tight truncate" style={{ color: theme.nodeText }}>
               {fullName}
             </div>
             {dates && (
-              <div className="text-xs text-slate-500 mt-0.5">{dates}</div>
+              <div className="text-xs mt-0.5" style={{ color: theme.nodeSubtext }}>{dates}</div>
             )}
             {isFocus && (
               <div
@@ -205,7 +213,7 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
               </div>
             )}
             {isDeceased && (
-              <div className="text-[10px] text-slate-400 mt-0.5">✝ Deceased</div>
+              <div className="text-[10px] mt-0.5" style={{ color: theme.nodeSubtext }}>✝ Deceased</div>
             )}
           </div>
         </div>

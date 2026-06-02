@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { TreeCanvas, type TreeCanvasHandle } from '@features/tree/canvas/TreeCanvas';
+import { useThemeStore, THEME_PRESETS, PRESET_LABEL, type CanvasTheme } from '@store/theme.store';
 import { useCanvasStore } from '@store/canvas.store';
 import { useAuthStore } from '@store/auth.store';
 import { queryKeys } from '@queries/keys';
@@ -1184,6 +1185,7 @@ function TreeTopBar({
   onResetLayout: () => void;
   onLayouts: () => void;
   onExportCsv: () => void;
+  onTheme: () => void;
   onShowActivity: () => void;
 }) {
   const [exportingZip, setExportingZip] = React.useState(false);
@@ -1298,6 +1300,13 @@ function TreeTopBar({
           Layouts
         </button>
         <button
+          onClick={onTheme}
+          title="Customize tree canvas appearance"
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+        >
+          🎨 Theme
+        </button>
+        <button
           onClick={onResetLayout}
           title="Snap nodes back to layout and fit view"
           className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
@@ -1401,6 +1410,7 @@ export default function FamilyTreePage() {
 
   const canvasRef = React.useRef<TreeCanvasHandle>(null);
   const [showLayouts,     setShowLayouts]     = useState(false);
+  const [showCanvasTheme, setShowCanvasTheme] = useState(false);
 
   const [panelPersonId,     setPanelPersonId]     = useState<string | null>(null);
   const [showAddPerson,     setShowAddPerson]     = useState(false);
@@ -1478,6 +1488,7 @@ export default function FamilyTreePage() {
         onResetLayout={bumpLayoutReset}
         onLayouts={() => setShowLayouts(true)}
         onExportCsv={() => graph && exportTreeCsv(graph, treeName)}
+        onTheme={() => setShowCanvasTheme(true)}
         onShowActivity={() => setShowActivity(true)}
       />
 
@@ -1588,6 +1599,10 @@ export default function FamilyTreePage() {
           currentUserId={useAuthStore.getState().user?.id ?? ''}
           onClose={() => setShowMembers(false)}
         />
+      )}
+
+      {showCanvasTheme && (
+        <CanvasThemeModal onClose={() => setShowCanvasTheme(false)} />
       )}
 
       {showLayouts && treeId && (
@@ -1751,6 +1766,141 @@ function LayoutsModal({
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Canvas Theme Modal ─────────────────────────────────────────────────────
+
+function CanvasColorField({
+  label, field, value,
+}: { label: string; field: keyof CanvasTheme; value: string }) {
+  const updateField = useThemeStore((s) => s.updateField);
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+      <label className="text-sm text-slate-700">{label}</label>
+      <div className="flex items-center gap-2">
+        <div className="w-5 h-5 rounded border border-slate-300" style={{ background: value }} />
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => updateField(field, e.target.value)}
+          className="w-7 h-7 rounded cursor-pointer border-0 p-0 bg-transparent"
+          title={value}
+        />
+        <span className="text-xs text-slate-400 font-mono w-14">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function CanvasThemeModal({ onClose }: { onClose: () => void }) {
+  const { theme, setPreset, updateField, reset } = useThemeStore();
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-end bg-black/20 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-80 max-h-[calc(100vh-5rem)] flex flex-col border border-slate-200 mt-14"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Tree canvas theme</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Presets */}
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Presets</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {THEME_PRESETS.map((p) => (
+                <button
+                  key={p.preset}
+                  onClick={() => setPreset(p.preset)}
+                  className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 text-xs font-medium transition-colors ${
+                    theme.preset === p.preset
+                      ? 'border-brand-500 bg-brand-50 text-brand-700'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                  }`}
+                >
+                  <span className="flex gap-0.5">
+                    <span className="w-3 h-3 rounded-sm" style={{ background: p.canvasBg, border: `1px solid ${p.canvasDot}` }} />
+                    <span className="w-3 h-3 rounded-sm" style={{ background: p.nodeBg, border: `1px solid ${p.nodeBorder}` }} />
+                    <span className="w-3 h-3 rounded-sm" style={{ background: p.edgeColor }} />
+                  </span>
+                  {PRESET_LABEL[p.preset]}
+                </button>
+              ))}
+              {theme.preset === 'custom' && (
+                <span className="flex flex-col items-center gap-1 p-2 rounded-lg border-2 border-brand-500 bg-brand-50 text-xs font-medium text-brand-700">
+                  Custom
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Background */}
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Background</p>
+            <div className="rounded-lg border border-slate-200 px-3">
+              <CanvasColorField label="Canvas fill" field="canvasBg"  value={theme.canvasBg} />
+              <CanvasColorField label="Grid dots"   field="canvasDot" value={theme.canvasDot} />
+            </div>
+          </div>
+
+          {/* Box */}
+          <div>
+            <p className="text-xs font-semibond text-slate-500 uppercase tracking-wider mb-1">Box (person card)</p>
+            <div className="rounded-lg border border-slate-200 px-3">
+              <CanvasColorField label="Background" field="nodeBg"      value={theme.nodeBg} />
+              <CanvasColorField label="Border"     field="nodeBorder"  value={theme.nodeBorder} />
+              <CanvasColorField label="Hover"      field="nodeHoverBg" value={theme.nodeHoverBg} />
+            </div>
+          </div>
+
+          {/* Foreground */}
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Foreground (text)</p>
+            <div className="rounded-lg border border-slate-200 px-3">
+              <CanvasColorField label="Name text" field="nodeText"    value={theme.nodeText} />
+              <CanvasColorField label="Sub text"  field="nodeSubtext" value={theme.nodeSubtext} />
+            </div>
+          </div>
+
+          {/* Lines */}
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Lines</p>
+            <div className="rounded-lg border border-slate-200 px-3">
+              <CanvasColorField label="Line color"      field="edgeColor"     value={theme.edgeColor} />
+              <CanvasColorField label="Highlight color" field="edgeHighlight" value={theme.edgeHighlight} />
+              <div className="flex items-center justify-between py-2">
+                <label className="text-sm text-slate-700">Thickness</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range" min={0.5} max={4} step={0.25}
+                    value={theme.edgeWidth}
+                    onChange={(e) => updateField('edgeWidth', parseFloat(e.target.value))}
+                    className="w-24 accent-brand-500"
+                  />
+                  <span className="text-xs font-mono text-slate-500 w-9 text-right">
+                    {theme.edgeWidth}px
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={reset}
+            className="w-full py-2 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            Reset to Classic
+          </button>
         </div>
       </div>
     </div>

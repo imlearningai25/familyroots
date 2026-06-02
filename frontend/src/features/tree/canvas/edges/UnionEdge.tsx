@@ -16,6 +16,7 @@ import {
 } from 'reactflow';
 import type { UnionEdgeData } from '../../types';
 import { UNION_STROKE } from '../../types';
+import { useThemeStore } from '@store/theme.store';
 
 const UNION_COLORS: Record<UnionEdgeData['unionType'], string> = {
   MARRIAGE: '#f59e0b',
@@ -34,6 +35,7 @@ function UnionEdgeComponent({
   targetPosition,
   data,
 }: EdgeProps<UnionEdgeData>) {
+  const edgeWidth  = useThemeStore((s) => s.theme.edgeWidth);
   const unionType  = data?.unionType ?? 'UNKNOWN';
   const color      = UNION_COLORS[unionType];
   const dashArray  = UNION_STROKE[unionType];
@@ -42,7 +44,7 @@ function UnionEdgeComponent({
 
   const hl         = data?.isHighlighted;
   const opacity    = hl === true ? 1 : hl === false ? 0.15 : 1;
-  const strokeW    = hl === true ? 2.5 : 1.5;
+  const strokeW    = hl === true ? edgeWidth * 1.6 : edgeWidth;
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 

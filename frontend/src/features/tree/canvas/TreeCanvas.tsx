@@ -35,6 +35,7 @@ import { TreeControls } from './controls/TreeControls';
 import { useTreeLayout } from './useTreeLayout';
 import { useExpandCollapse } from './useExpandCollapse';
 import { useCanvasStore } from '@store/canvas.store';
+import { useThemeStore } from '@store/theme.store';
 import type { ApiTreeGraph, TreeNode } from '../types';
 import { DEFAULT_LAYOUT_OPTIONS } from '../types';
 
@@ -174,6 +175,7 @@ export interface TreeCanvasHandle {
 const TreeCanvasInner = forwardRef<TreeCanvasHandle, TreeCanvasInnerProps>(
 function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect }, ref) {
   const { fitView } = useReactFlow();
+  const canvasTheme = useThemeStore((s) => s.theme);
 
   const layoutMode          = useCanvasStore((s) => s.layoutMode);
   const focusPersonId       = useCanvasStore((s) => s.focusPersonId);
@@ -431,7 +433,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
   }
 
   return (
-    <div ref={containerRef} className="w-full h-full relative bg-surface-muted">
+    <div ref={containerRef} className="w-full h-full relative" style={{ background: canvasTheme.canvasBg }}>
       {ctrlDragActive && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-brand-600 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg pointer-events-none select-none">
           Ctrl drag · moving with descendants
@@ -466,7 +468,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
         edgesFocusable={false}
         nodesDraggable
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color={canvasTheme.canvasDot} />
 
         <MiniMap
           nodeColor={miniMapNodeColor}

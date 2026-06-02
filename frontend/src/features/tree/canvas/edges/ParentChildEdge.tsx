@@ -18,9 +18,7 @@ import {
 } from 'reactflow';
 import type { ParentChildEdgeData } from '../../types';
 import { PARENTAGE_STROKE } from '../../types';
-
-const EDGE_COLOR          = '#94a3b8'; // slate-400
-const EDGE_COLOR_HIGHLIGHT = '#3b82f6'; // blue-500
+import { useThemeStore } from '@store/theme.store';
 
 const PARENTAGE_LABELS: Partial<Record<ParentChildEdgeData['parentageType'], string>> = {
   ADOPTIVE: 'adopted',
@@ -39,6 +37,7 @@ function ParentChildEdgeComponent({
   data,
   markerEnd,
 }: EdgeProps<ParentChildEdgeData>) {
+  const theme         = useThemeStore((s) => s.theme);
   const parentageType = data?.parentageType ?? 'BIOLOGICAL';
   const dashArray     = PARENTAGE_STROKE[parentageType];
   const label         = PARENTAGE_LABELS[parentageType];
@@ -67,8 +66,8 @@ function ParentChildEdgeComponent({
         path={edgePath}
         markerEnd={markerEnd}
         style={{
-          stroke: hl === true ? EDGE_COLOR_HIGHLIGHT : EDGE_COLOR,
-          strokeWidth: hl === true ? 3 : 1.5,
+          stroke: hl === true ? theme.edgeHighlight : theme.edgeColor,
+          strokeWidth: hl === true ? theme.edgeWidth * 2 : theme.edgeWidth,
           strokeDasharray: isSolid ? undefined : dashArray,
           opacity,
           transition: 'stroke 0.25s, stroke-width 0.25s, opacity 0.25s',

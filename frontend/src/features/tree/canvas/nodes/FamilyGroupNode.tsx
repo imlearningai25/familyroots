@@ -12,6 +12,7 @@ import React, { memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { FamilyGroupNodeData } from '../../types';
 import { FAMILY_NODE_SIZE } from '../../types';
+import { useThemeStore } from '@store/theme.store';
 
 const UNION_ICONS: Record<FamilyGroupNodeData['unionType'], string> = {
   MARRIAGE: '💍',
@@ -29,8 +30,9 @@ const UNION_COLORS: Record<FamilyGroupNodeData['unionType'], string> = {
 
 function FamilyGroupNodeComponent({ data, selected }: NodeProps<FamilyGroupNodeData>) {
   const { unionType, showUnionIcon } = data;
-  const color = UNION_COLORS[unionType];
-  const icon = UNION_ICONS[unionType];
+  const color   = UNION_COLORS[unionType];
+  const icon    = UNION_ICONS[unionType];
+  const nodeBg  = useThemeStore((s) => s.theme.nodeBg);
 
   return (
     <>
@@ -59,7 +61,7 @@ function FamilyGroupNodeComponent({ data, selected }: NodeProps<FamilyGroupNodeD
         style={{
           width: FAMILY_NODE_SIZE,
           height: FAMILY_NODE_SIZE,
-          background: 'white',
+          background: nodeBg,
           border: `2px solid ${selected ? color : color + '99'}`,
           boxShadow: selected
             ? `0 0 0 4px ${color}33`
