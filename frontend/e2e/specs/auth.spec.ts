@@ -16,8 +16,8 @@ test.describe('Registration', () => {
     await page.getByLabel('Password').fill('Str0ng!Pass2024');
     await page.getByRole('button', { name: /create account/i }).click();
 
-    // Should land on login or dashboard
-    await expect(page).toHaveURL(/\/(login|dashboard|trees)/, { timeout: 10_000 });
+    // Registration sends verification email — should redirect to login with registered flag
+    await expect(page).toHaveURL(/\/login\?registered=1/, { timeout: 10_000 });
   });
 
   test('duplicate email shows error', async ({ page }) => {
@@ -39,6 +39,30 @@ test.describe('Registration', () => {
     await page.getByRole('button', { name: /create account/i }).click();
 
     await expect(page.getByText(/password/i)).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('registration form has no Organisation ID field', async ({ page }) => {
+    await page.goto('/register');
+    // tenant_slug / Organisation ID field must not exist on the form
+    await expect(page.getByLabel(/organisation id|org id|tenant/i)).not.toBeVisible();
+  });
+
+  test('after registration hard-refresh does not grant dashboard access', async ({ page }) => {
+    const uniqueEmail = `unverified-${Date.now()}@familyroots.test`;
+
+    await page.goto('/register');
+    await page.getByLabel('First name').fill('Unverified');
+    await page.getByLabel('Last name').fill('User');
+    await page.getByLabel('Email').fill(uniqueEmail);
+    await page.getByLabel('Password').fill('Str0ng!Pass2024');
+    await page.getByRole('button', { name: /create account/i }).click();
+
+    // Wait for redirect to login
+    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+
+    // Hard-navigate to a protected route — must not be granted access without verification
+    await page.goto('/trees');
+    await expect(page).toHaveURL(/\/login/, { timeout: 5_000 });
   });
 });
 

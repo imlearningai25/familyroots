@@ -12,12 +12,6 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     given_name: str = Field(min_length=1, max_length=100)
     family_name: str = Field(min_length=1, max_length=100)
-    tenant_slug: str = Field(
-        min_length=3,
-        max_length=100,
-        pattern=r"^[a-z0-9][a-z0-9\-]{1,98}[a-z0-9]$",
-        description="Unique slug for your organisation (lowercase, hyphens allowed)",
-    )
 
     @field_validator("password")
     @classmethod

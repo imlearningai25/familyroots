@@ -15,6 +15,7 @@ import { transformGraphToFlow } from './useTreeTransform';
 import { dagreLayout } from './algorithms/dagre';
 import { fanChartLayout, fanChartVisibleIds } from './algorithms/fanChart';
 import { ancestorChartLayout, descendantChartLayout } from './algorithms/ancestorChart';
+import { familyTreeLayout } from './algorithms/familyTree';
 
 export interface UseTreeLayoutResult {
   nodes: TreeNode[];
@@ -119,10 +120,38 @@ function applyLayout(
     }
 
     case 'vertical':
-    case 'horizontal':
     default: {
+      // Build a filtered ApiTreeGraph from the already-expanded visible nodes
+      // so familyTreeLayout only sees what's on screen.
+      const visiblePersonIds = new Set(
+        nodes.filter((n) => n.type === 'person').map((n) => n.id)
+      );
+      const visibleFGIds = new Set(
+        nodes.filter((n) => n.type === 'family-group').map((n) => n.id)
+      );
+      const filteredGraph: ApiTreeGraph = {
+        treeId: graph.treeId,
+        persons: graph.persons.filter((p) => visiblePersonIds.has(p.id)),
+        familyGroups: graph.familyGroups
+          .filter((fg) => visibleFGIds.has(fg.id))
+          .map((fg) => ({
+            ...fg,
+            parentIds: fg.parentIds.filter((pid) => visiblePersonIds.has(pid)),
+            children: Object.fromEntries(
+              Object.entries(fg.children).filter(([cid]) => visiblePersonIds.has(cid))
+            ),
+          })),
+      };
+      positions = familyTreeLayout(filteredGraph, {
+        nodeHGap: opts.nodeHGap,
+        nodeVGap: opts.nodeVGap,
+      });
+      break;
+    }
+
+    case 'horizontal': {
       const { nodes: positioned } = dagreLayout(nodes, edges, {
-        direction: opts.direction,
+        direction: 'LR',
         nodeHGap: opts.nodeHGap,
         nodeVGap: opts.nodeVGap,
       });

@@ -4,15 +4,15 @@
 
 ```
                     ┌─────────────┐
-                    │   E2E (Playwright)    │  ~30 tests
+                    │   E2E (Playwright)    │  ~40 tests
                     │  Full user journeys   │
                     └───────┬─────────────┘
                     ┌───────┴──────────────┐
-                    │  Integration Tests    │  ~120 tests
+                    │  Integration Tests    │  ~140 tests
                     │  API + DB + Redis     │
                     └───────┬──────────────┘
                ┌────────────┴──────────────────┐
-               │         Unit Tests             │  ~400 tests
+               │         Unit Tests             │  ~430 tests
                │  Domain / Services / Components│
                └───────────────────────────────┘
 ```
@@ -174,6 +174,74 @@ npx playwright test
 # Performance
 cd backend && locust -f tests/performance/locustfile.py --headless -u 200 -r 20 --run-time 60s
 ```
+
+## Key Test Areas by Feature
+
+### Authentication & Registration
+
+| Test | File | Type |
+| --- | --- | --- |
+| `POST /auth/register` returns 204, no body, no cookie | `test_auth_endpoints.py` | Integration |
+| Registration without `tenant_slug` succeeds (field removed) | `test_auth_endpoints.py` | Integration |
+| Duplicate email in same tenant → 409 | `test_auth_endpoints.py` | Integration |
+| Unverified user cannot log in → 403 | `test_auth_endpoints.py` | Integration |
+| `register()` returns None, user created with `email_verified=False` | `test_auth_service.py` | Unit |
+| Registration form has no Organisation ID field | `auth.spec.ts` | E2E |
+| Hard-refresh after registration does not grant dashboard access | `auth.spec.ts` | E2E |
+
+### Email Verification
+
+| Test | File | Type |
+| --- | --- | --- |
+| `POST /auth/resend-verification` always returns 204 | `test_auth_endpoints.py` | Integration |
+| `resend_verification()` replaces token for unverified user | `test_auth_service.py` | Unit |
+| `resend_verification()` is no-op for verified / unknown user | `test_auth_service.py` | Unit |
+| Invalid verification token → 401 | `test_auth_endpoints.py` | Integration |
+| `verify_email()` sets `email_verified=True`, clears token | `test_auth_service.py` | Unit |
+
+### Forgot Password
+
+| Test | File | Type |
+| --- | --- | --- |
+| Unverified account → 403 with `account-not-verified` type | `test_auth_endpoints.py` | Integration |
+| `forgot_password()` raises `AccountNotVerifiedError` for unverified | `test_auth_service.py` | Unit |
+| Unknown email → 204 (silent, no enumeration) | `test_auth_endpoints.py` | Integration |
+| Verified user gets `password_reset_token` set | `test_auth_service.py` | Unit |
+
+### Admin User Management
+
+| Test | File | Type |
+| --- | --- | --- |
+| `POST /admin/users` creates user, triggers activation email | `test_admin_api.py` | Integration |
+| `POST /admin/users/{id}/verify` verifies user, triggers email | `test_admin_api.py` | Integration |
+| `PATCH /admin/users/{id}` with `email_verified=false` unverifies | `test_admin_api.py` | Integration |
+| `DELETE /admin/users/{id}` deactivates, triggers email, revokes sessions | `test_admin_api.py` | Integration |
+| Admin cannot deactivate themselves → 400 | `test_admin_api.py` | Integration |
+| All admin actions create entries in `login_events` with correct `event_type` | `test_admin_api.py` | Integration |
+
+### Single-Tenant Architecture
+
+| Test | File | Type |
+| --- | --- | --- |
+| All registrations join `DEFAULT_TENANT_SLUG` tenant | `test_auth_service.py` | Unit |
+| Admin list only returns users in admin's tenant | `test_tenant_isolation.py` | Security |
+| JWT `tid` claim cannot be overridden to access other tenants | `test_tenant_isolation.py` | Security |
+
+### Activity Feed
+
+| Test | File | Type |
+| --- | --- | --- |
+| Admin verify → `ADMIN_VERIFY` entry in `login_events` | `test_admin_api.py` | Integration |
+| Admin deactivate → `ADMIN_DEACTIVATE` entry | `test_admin_api.py` | Integration |
+| Admin create → `ADMIN_CREATE` entry | `test_admin_api.py` | Integration |
+| Admin update → `ADMIN_UPDATE` / `ADMIN_ACTIVATE` / `ADMIN_UNVERIFY` entry | `test_admin_api.py` | Integration |
+
+### S3 / Media
+
+| Test | File | Type |
+| --- | --- | --- |
+| Presigned download URLs use `S3_PUBLIC_URL`, not internal endpoint | `test_media_api.py` | Integration |
+| Presigned upload URLs use `S3_PUBLIC_URL` | `test_media_api.py` | Integration |
 
 ## CI Pipeline
 

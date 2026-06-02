@@ -25,7 +25,7 @@ router = APIRouter(tags=["collaboration"])
 # ── Dependency ─────────────────────────────────────────────────────────────────
 
 async def get_collaboration_service(uow: UoWDep) -> CollaborationService:
-    return CollaborationService(uow.session)
+    return CollaborationService(uow._session)
 
 CollabDep = Annotated[CollaborationService, Depends(get_collaboration_service)]
 
@@ -204,10 +204,34 @@ async def delete_tree(
         if row.role != "OWNER":
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the tree owner can delete this tree")
 
+    # Grab name before soft-delete for the audit record
+    tree_row = (await uow._session.execute(
+        text("SELECT name FROM family_trees WHERE id = :tid AND is_deleted = false LIMIT 1"),
+        {"tid": tree_id},
+    )).first()
+    tree_name = tree_row.name if tree_row else str(tree_id)
+
     await uow._session.execute(
         text("UPDATE family_trees SET is_deleted = true WHERE id = :tid"),
         {"tid": tree_id},
     )
+
+    from src.domain.collaboration.entities import AuditEntry, Action, AuditEntityType
+    from src.infrastructure.repositories.collaboration import AuditLogRepository
+    actor_name = f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email
+    await AuditLogRepository(uow._session).append(
+        AuditEntry.create(
+            tree_id=tree_id,
+            tenant_id=current_user.tenant_id,
+            actor_id=current_user.id,
+            actor_display_name=actor_name,
+            action=Action.DELETE_TREE,
+            entity_type=AuditEntityType.TREE,
+            entity_id=tree_id,
+            entity_display_name=tree_name,
+        )
+    )
+    await uow._session.commit()
 
 
 class UpdateTreeRequest(BaseModel):
@@ -270,6 +294,22 @@ async def update_tree(
             {"tid": tree_id, "uid": current_user.id},
         )).scalar()) else TreeRole.ADMIN
 
+    from src.domain.collaboration.entities import AuditEntry, Action, AuditEntityType
+    from src.infrastructure.repositories.collaboration import AuditLogRepository
+    actor_name = f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email
+    await AuditLogRepository(uow._session).append(
+        AuditEntry.create(
+            tree_id=tree_id,
+            tenant_id=current_user.tenant_id,
+            actor_id=current_user.id,
+            actor_display_name=actor_name,
+            action=Action.UPDATE_TREE,
+            entity_type=AuditEntityType.TREE,
+            entity_id=tree_id,
+            entity_display_name=row.name,
+            after={"name": body.name, "description": body.description},
+        )
+    )
     await uow._session.commit()
     return TreeSummaryResponse(
         id=row.id,
@@ -554,14 +594,19 @@ async def get_tree_graph(
 ) -> dict:
     from sqlalchemy import text
 
-    # Admin and auditor bypass membership check
-    if current_user.app_role not in (AppRole.ADMIN, AppRole.AUDITOR):
+    # Admin and auditor bypass membership check; resolve effective role for response
+    if current_user.app_role == AppRole.ADMIN:
+        effective_tree_role = "OWNER"
+    elif current_user.app_role == AppRole.AUDITOR:
+        effective_tree_role = "VIEWER"
+    else:
         membership_q = text(
-            "SELECT 1 FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"
+            "SELECT role FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"
         )
         row = (await uow._session.execute(membership_q, {"tid": tree_id, "uid": current_user.id})).first()
         if row is None:
             raise HTTPException(403, "Not a member of this tree")
+        effective_tree_role = row.role
 
     # Tree metadata
     tree_q = text("SELECT name, description FROM family_trees WHERE id = :tid")
@@ -628,6 +673,7 @@ async def get_tree_graph(
         "treeId":          str(tree_id),
         "treeName":        tree_row.name if tree_row else "",
         "treeDescription": tree_row.description if tree_row else None,
+        "userRole":        effective_tree_role,
         "persons":         persons,
         "familyGroups":    list(groups.values()),
     }
@@ -1005,6 +1051,116 @@ async def list_members(
     ]
 
 
+class AddMemberDirectRequest(BaseModel):
+    user_id: uuid.UUID
+    role: TreeRole = TreeRole.VIEWER
+
+
+@router.post("/trees/{tree_id}/members", response_model=MemberResponse,
+             status_code=status.HTTP_201_CREATED,
+             summary="Directly add an existing tenant user as a tree member (OWNER/ADMIN only)")
+async def add_member_direct(
+    tree_id: uuid.UUID,
+    body: AddMemberDirectRequest,
+    current_user: NotAuditorDep,
+    uow: UoWDep,
+) -> MemberResponse:
+    from sqlalchemy import text
+
+    # Require OWNER or ADMIN tree role (or app-level ADMIN)
+    if current_user.app_role != AppRole.ADMIN:
+        caller_row = (await uow._session.execute(
+            text("SELECT role FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"),
+            {"tid": tree_id, "uid": current_user.id},
+        )).first()
+        if caller_row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Tree not found")
+        if caller_row.role not in ("OWNER", "ADMIN"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and admins can add members directly")
+
+    # Verify target user belongs to this tenant
+    user_row = (await uow._session.execute(
+        text("SELECT id, email, given_name, family_name FROM users WHERE id = :uid AND tenant_id = :tid LIMIT 1"),
+        {"uid": body.user_id, "tid": current_user.tenant_id},
+    )).first()
+    if user_row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found in this tenant")
+
+    # Upsert tree membership (handles already-member case gracefully)
+    member_id = uuid.uuid4()
+    await uow._session.execute(
+        text("""
+            INSERT INTO tree_members (id, tree_id, user_id, tenant_id, role, invited_by_id, joined_at)
+            VALUES (:id, :tree_id, :user_id, :tenant_id, :role, :invited_by, now())
+            ON CONFLICT (tree_id, user_id) DO UPDATE SET role = EXCLUDED.role
+            RETURNING id, joined_at
+        """),
+        {
+            "id": member_id,
+            "tree_id": tree_id,
+            "user_id": body.user_id,
+            "tenant_id": current_user.tenant_id,
+            "role": body.role.value,
+            "invited_by": current_user.id,
+        },
+    )
+    await uow._session.commit()
+
+    display_name = f"{user_row.given_name or ''} {user_row.family_name or ''}".strip() or user_row.email
+
+    return MemberResponse(
+        id=member_id,
+        tree_id=tree_id,
+        user_id=body.user_id,
+        role=body.role,
+        joined_at=None,
+        email=user_row.email,
+        display_name=display_name,
+    )
+
+
+class TenantUserForShareResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    display_name: str
+
+
+@router.get("/trees/{tree_id}/tenant-users", response_model=list[TenantUserForShareResponse],
+            summary="List tenant users not already in this tree (for share modal, OWNER/ADMIN only)")
+async def list_tenant_users_for_share(
+    tree_id: uuid.UUID,
+    current_user: NotAuditorDep,
+    uow: UoWDep,
+) -> list[TenantUserForShareResponse]:
+    from sqlalchemy import text
+
+    if current_user.app_role != AppRole.ADMIN:
+        row = (await uow._session.execute(
+            text("SELECT role FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"),
+            {"tid": tree_id, "uid": current_user.id},
+        )).first()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Tree not found")
+        if row.role not in ("OWNER", "ADMIN"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and admins can share this tree")
+
+    rows = (await uow._session.execute(text("""
+        SELECT
+            u.id,
+            u.email,
+            COALESCE(NULLIF(TRIM(CONCAT(u.given_name, ' ', u.family_name)), ''), u.email) AS display_name
+        FROM users u
+        WHERE u.tenant_id = :tenant_id
+          AND u.is_active = true
+          AND u.id NOT IN (
+              SELECT user_id FROM tree_members WHERE tree_id = :tree_id
+          )
+        ORDER BY display_name
+    """), {"tenant_id": current_user.tenant_id, "tree_id": tree_id})).fetchall()
+
+    return [TenantUserForShareResponse(id=r.id, email=r.email, display_name=r.display_name) for r in rows]
+
+
 @router.patch("/trees/{tree_id}/members/{user_id}/role", status_code=status.HTTP_204_NO_CONTENT, response_model=None, response_class=Response)
 async def change_member_role(
     tree_id: uuid.UUID,
@@ -1019,7 +1175,7 @@ async def change_member_role(
         target_user_id=user_id,
         new_role=body.role,
         actor_id=current_user.id,
-        actor_name=current_user.display_name,
+        actor_name=f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email,
         ip_address=request.client.host if request.client else None,
         app_role=current_user.app_role,
     )
@@ -1038,7 +1194,7 @@ async def remove_member(
         tree_id=tree_id,
         target_user_id=user_id,
         actor_id=current_user.id,
-        actor_name=current_user.display_name,
+        actor_name=f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email,
         tenant_id=current_user.tenant_id,
         ip_address=request.client.host if request.client else None,
         app_role=current_user.app_role,
@@ -1068,18 +1224,50 @@ async def send_invitation(
     current_user: NotAuditorDep,
     svc: CollabDep,
 ) -> InvitationResponse:
+    actor_name = f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email
+
+    # Resolve tree name for the email
+    from sqlalchemy import text as _text
+    tree_row = (await svc._session.execute(
+        _text("SELECT name FROM family_trees WHERE id = :tid AND is_deleted = false LIMIT 1"),
+        {"tid": tree_id},
+    )).first()
+    tree_name = tree_row.name if tree_row else str(tree_id)
+
     invitation = await svc.send_invitation(
         tree_id=tree_id,
         tenant_id=current_user.tenant_id,
         actor_id=current_user.id,
-        actor_name=current_user.display_name,
+        actor_name=actor_name,
         invitee_email=body.email,
         role=body.role,
         message=body.message,
         ip_address=request.client.host if request.client else None,
         app_role=current_user.app_role,
     )
-    # TODO: dispatch email via background task
+
+    # Dispatch invitation email in the background (non-blocking)
+    import asyncio as _asyncio
+    from src.config import get_settings as _get_settings
+    from src.infrastructure.email.service import send_email as _send_email, tree_invitation_email as _inv_email
+
+    _settings = _get_settings()
+    _accept_url = f"{_settings.frontend_base_url}/invitations/accept?token={invitation.token}"
+    _html, _text = _inv_email(
+        invitee_email=body.email,
+        inviter_name=actor_name,
+        tree_name=tree_name,
+        role=body.role.value,
+        accept_url=_accept_url,
+        message=body.message,
+    )
+    _asyncio.create_task(_send_email(
+        to=body.email,
+        subject=f"{actor_name} invited you to join {tree_name} on FamilyRoots",
+        html_body=_html,
+        text_body=_text,
+    ))
+
     return InvitationResponse.from_domain(invitation)
 
 
@@ -1110,7 +1298,7 @@ async def revoke_invitation(
         tree_id=tree_id,
         actor_id=current_user.id,
         tenant_id=current_user.tenant_id,
-        actor_name=current_user.display_name,
+        actor_name=f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email,
         app_role=current_user.app_role,
     )
 
@@ -1185,7 +1373,7 @@ async def restore_person_version(
         tree_id=tree_id,
         version_number=version_number,
         actor_id=current_user.id,
-        actor_name=current_user.display_name,
+        actor_name=f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email,
         tenant_id=current_user.tenant_id,
         ip_address=request.client.host if request.client else None,
     )

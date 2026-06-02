@@ -1,6 +1,6 @@
 # FamilyRoots
 
-A multi-tenant genealogy platform for building, exploring, and collaborating on family trees. Built with FastAPI, React, PostgreSQL, and Redis.
+A genealogy platform for building, exploring, and collaborating on family trees. Built with FastAPI, React, PostgreSQL, and Redis.
 
 ---
 
@@ -11,7 +11,9 @@ A multi-tenant genealogy platform for building, exploring, and collaborating on 
 - [Local Deployment](#local-deployment)
   - [1. Clone and configure](#1-clone-and-configure)
   - [2. Start core services](#2-start-core-services)
+  - [Email Configuration](#email-configuration)
   - [3. Run database migrations](#3-run-database-migrations)
+  - [3.5. Seed initial data](#35-seed-initial-data)
   - [4. Access the app](#4-access-the-app)
   - [5. Optional: monitoring stack](#5-optional-monitoring-stack)
   - [Running tests](#running-tests)
@@ -84,12 +86,29 @@ Open `backend/.env` and set at minimum:
 # Required — generate with: openssl rand -hex 64
 JWT_SECRET_KEY=<your-secret-key>
 
+# Single shared tenant slug — all registered users join this tenant
+DEFAULT_TENANT_SLUG=familyroots-system
+
 # Pre-filled for local Docker Compose — change only if needed
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:7000/familyroots
 REDIS_URL=redis://localhost:7001/0
+
+# Gmail SMTP — required for email verification and password reset
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<your-gmail-address>
+SMTP_PASSWORD=<your-gmail-app-password>
+EMAIL_FROM=<your-gmail-address>
+
+# MinIO public URL — must be reachable by browsers for presigned download links
+S3_PUBLIC_URL=http://localhost:7002
 ```
 
 Everything else (MinIO credentials, S3 endpoint, CORS) is already set in `docker-compose.yml` for local use and does not need to be changed.
+
+> **`DEFAULT_TENANT_SLUG`** — FamilyRoots uses a single-tenant architecture. All users are placed into one shared tenant identified by this slug. There is no per-user or per-organisation tenant selection at registration. Changing this value after data has been seeded requires a data migration.
+>
+> **`S3_PUBLIC_URL`** — Presigned MinIO download URLs are rewritten to use this host before being returned to the browser. The internal `minio:9000` hostname is not accessible from outside Docker, so this must point to the externally reachable MinIO API port (`http://localhost:7002` in local dev).
 
 ### 2. Start core services
 
@@ -114,6 +133,27 @@ docker compose ps
 
 All services should show `healthy` or `running` before proceeding.
 
+### Email Configuration
+
+FamilyRoots sends transactional email (verification links, password reset, admin notifications) via Gmail SMTP. MailHog is no longer used in local development.
+
+#### Setting up a Gmail App Password
+
+1. Enable 2-Step Verification on the Google account you want to send from.
+2. Go to [Google Account → Security → App passwords](https://myaccount.google.com/apppasswords).
+3. Create a new app password (name it something like "FamilyRoots local").
+4. Copy the 16-character password into `SMTP_PASSWORD` in `backend/.env`.
+
+The following env vars control email sending:
+
+| Variable | Example | Description |
+| -------- | ------- | ----------- |
+| `SMTP_HOST` | `smtp.gmail.com` | SMTP server hostname |
+| `SMTP_PORT` | `587` | SMTP port (STARTTLS) |
+| `SMTP_USER` | `you@gmail.com` | Gmail address used for authentication |
+| `SMTP_PASSWORD` | `abcd efgh ijkl mnop` | Gmail App Password (not your account password) |
+| `EMAIL_FROM` | `you@gmail.com` | Address that appears in the From header |
+
 ### 3. Run database migrations
 
 ```bash
@@ -124,16 +164,51 @@ This applies the full Alembic migration history, including the baseline schema (
 
 > Run this once on first setup, and again after pulling changes that include new migrations.
 
+### 3.5. Seed initial data
+
+After running migrations on a fresh database, seed the three built-in accounts:
+
+```bash
+python backend/scripts/seed_users.py
+```
+
+This creates the following accounts in the `familyroots-system` tenant:
+
+| Email | Password | Role |
+| ----- | -------- | ---- |
+| `admin@familyroots.app` | `Admin@FR2024!` | ADMIN |
+| `user@familyroots.app` | `User@FR2024!` | STANDARD |
+| `auditor@familyroots.app` | `Auditor@FR2024!` | AUDITOR |
+
+> After a full reset (`docker compose down -v`), re-run migrations then re-run the seed script to restore these accounts.
+
 ### 4. Access the app
 
 | Service | URL | Credentials |
 |---------|-----|------------|
-| Frontend | http://localhost:7006 | Register a new account |
+| Frontend | http://localhost:7006 | Use a seed account above, or register a new account |
 | Backend API | http://localhost:7004 | — |
 | API docs (Swagger) | http://localhost:7004/docs | — |
 | API docs (ReDoc) | http://localhost:7004/redoc | — |
 | Flower (task monitor) | http://localhost:7005 | — |
 | MinIO Console | http://localhost:7003 | `minioadmin` / `minioadmin` |
+
+#### Registration notes
+
+- There is no "Organisation ID" field. All new users automatically join the shared `familyroots-system` tenant.
+- `POST /auth/register` returns `204 No Content`. No JWT is issued at registration time.
+- A verification email is sent immediately after registration. The account cannot log in until the email link is clicked.
+- To resend the verification email, call `POST /api/v1/auth/resend-verification`.
+- Admins can manually verify an account via the Admin Dashboard or `POST /api/v1/admin/users/{id}/verify`.
+- Forgot password returns `403 account-not-verified` if the account email has not yet been verified.
+
+#### Admin Dashboard
+
+The Admin Dashboard (accessible to ADMIN-role accounts) provides user management including:
+
+- Manually verify or unverify user accounts
+- Deactivate or reactivate users (email notifications are sent on each action)
+- All admin actions appear in the Activity feed as `ADMIN_CREATE`, `ADMIN_VERIFY`, `ADMIN_UNVERIFY`, `ADMIN_DEACTIVATE`, `ADMIN_ACTIVATE`, or `ADMIN_UPDATE` events
 
 ### 5. Optional: monitoring stack
 
@@ -264,10 +339,15 @@ openssl rand -hex 64
 | `DB_PASSWORD` | PostgreSQL password |
 | `REDIS_PASSWORD` | Redis password |
 | `JWT_SECRET` | JWT signing key |
+| `DEFAULT_TENANT_SLUG` | Slug for the single shared tenant (e.g. `familyroots-system`) |
 | `S3_BUCKET` | S3 bucket name |
 | `S3_REGION` | AWS region (e.g. `us-east-1`) |
 | `AWS_ACCESS_KEY_ID` | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+| `SMTP_HOST` | SMTP server hostname |
+| `SMTP_USER` | SMTP authentication username |
+| `SMTP_PASSWORD` | SMTP authentication password |
+| `EMAIL_FROM` | From address for outbound email |
 | `CORS_ORIGINS` | JSON array of allowed origins, e.g. `["https://familyroots.example.com"]` |
 | `SENTRY_DSN` | Sentry DSN (optional) |
 | `GRAFANA_PASSWORD` | Grafana admin password (optional) |
@@ -384,7 +464,7 @@ Pull requests run steps 1–6 only (no deploy).
 |------|---------|-------|
 | 7000 | PostgreSQL | |
 | 7001 | Redis | |
-| 7002 | MinIO S3 API | `http://localhost:7002` |
+| 7002 | MinIO S3 API | `http://localhost:7002` — also used as `S3_PUBLIC_URL` for presigned links |
 | 7003 | MinIO Console | Web UI for browsing buckets |
 | 7004 | Backend API | REST API + `/docs` |
 | 7005 | Flower | Celery task monitor |
@@ -395,4 +475,4 @@ Pull requests run steps 1–6 only (no deploy).
 | 7010 | Loki | Monitoring stack only |
 | 7011 | Postgres Exporter | Monitoring stack only |
 | 7012 | Redis Exporter | Monitoring stack only |
-| 7013 | Frontend (prod) | Production docker-compose only |
+| 7013 | — | Previously MailHog (removed); not used in local dev |

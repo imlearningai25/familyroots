@@ -63,10 +63,13 @@ class S3Service:
         region: str,
         access_key_id: Optional[str] = None,
         secret_access_key: Optional[str] = None,
-        endpoint_url: Optional[str] = None,  # for LocalStack / MinIO
+        endpoint_url: Optional[str] = None,  # for LocalStack / MinIO (server-side)
+        public_url: Optional[str] = None,    # browser-accessible base URL (replaces endpoint_url in presigned URLs)
     ) -> None:
         self._bucket = bucket
         self._region = region
+        self._endpoint_url = endpoint_url.rstrip("/") if endpoint_url else None
+        self._public_url = public_url.rstrip("/") if public_url else None
 
         session = boto3.session.Session()
         self._client = session.client(
@@ -101,12 +104,12 @@ class S3Service:
                     "Bucket": self._bucket,
                     "Key": key,
                     "ContentType": content_type,
-                    # Enforce size limit via Content-Length-Range condition
-                    # (only works with POST; for PUT the limit is advisory)
                 },
                 ExpiresIn=expires_in,
                 HttpMethod="PUT",
             )
+            if self._public_url and self._endpoint_url:
+                url = url.replace(self._endpoint_url, self._public_url, 1)
             return url
         except ClientError as exc:
             raise StorageError("presign_upload", str(exc)) from exc
@@ -125,7 +128,7 @@ class S3Service:
         Returns { url, fields } suitable for multipart/form-data.
         """
         try:
-            return self._client.generate_presigned_post(
+            result = self._client.generate_presigned_post(
                 Bucket=self._bucket,
                 Key=key,
                 Fields={"Content-Type": content_type},
@@ -135,6 +138,9 @@ class S3Service:
                 ],
                 ExpiresIn=expires_in,
             )
+            if self._public_url and self._endpoint_url:
+                result["url"] = result["url"].replace(self._endpoint_url, self._public_url, 1)
+            return result
         except ClientError as exc:
             raise StorageError("presign_post", str(exc)) from exc
 
@@ -151,11 +157,16 @@ class S3Service:
                 f'attachment; filename="{filename}"'
             )
         try:
-            return self._client.generate_presigned_url(
+            url = self._client.generate_presigned_url(
                 "get_object",
                 Params=params,
                 ExpiresIn=expires_in,
             )
+            # Rewrite internal endpoint (e.g. http://minio:9000) to the
+            # browser-accessible public URL (e.g. http://localhost:7002)
+            if self._public_url and self._endpoint_url:
+                url = url.replace(self._endpoint_url, self._public_url, 1)
+            return url
         except ClientError as exc:
             raise StorageError("presign_download", str(exc)) from exc
 
@@ -254,6 +265,7 @@ def init_s3(
     access_key_id: Optional[str] = None,
     secret_access_key: Optional[str] = None,
     endpoint_url: Optional[str] = None,
+    public_url: Optional[str] = None,
 ) -> S3Service:
     global _s3_service
     _s3_service = S3Service(
@@ -262,6 +274,7 @@ def init_s3(
         access_key_id=access_key_id,
         secret_access_key=secret_access_key,
         endpoint_url=endpoint_url,
+        public_url=public_url,
     )
     return _s3_service
 

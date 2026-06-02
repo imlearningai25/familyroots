@@ -10,7 +10,7 @@
  *   - Large-family optimisation via viewport culling (built into React Flow)
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -166,7 +166,13 @@ interface TreeCanvasInnerProps {
   onFamilyGroupSelect?: (familyGroupId: string) => void;
 }
 
-function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect }: TreeCanvasInnerProps) {
+export interface TreeCanvasHandle {
+  getPositions: () => Record<string, { x: number; y: number }>;
+  loadPositions: (positions: Record<string, { x: number; y: number }>) => void;
+}
+
+const TreeCanvasInner = forwardRef<TreeCanvasHandle, TreeCanvasInnerProps>(
+function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect }, ref) {
   const { fitView } = useReactFlow();
 
   const layoutMode          = useCanvasStore((s) => s.layoutMode);
@@ -231,6 +237,17 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
   const [displayNodes, setDisplayNodes] = useState<TreeNode[]>([]);
   const prevLayoutKey = useRef('');
+
+  useImperativeHandle(ref, () => ({
+    getPositions: () =>
+      Object.fromEntries(displayNodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }])),
+    loadPositions: (positions) => {
+      setDisplayNodes((curr) =>
+        curr.map((n) => ({ ...n, position: positions[n.id] ?? n.position }))
+      );
+      setTimeout(() => fitView({ duration: 500, padding: 0.15 }), 80);
+    },
+  }), [displayNodes, fitView]);
 
   useEffect(() => {
     // Build a cheap key to detect real layout changes (not just object identity)
@@ -473,7 +490,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
       </ReactFlow>
     </div>
   );
-}
+}); // end forwardRef TreeCanvasInner
 
 // ── Exported wrapper ───────────────────────────────────────────────────────
 
@@ -484,10 +501,12 @@ export interface TreeCanvasProps {
   onFamilyGroupSelect?: (familyGroupId: string) => void;
 }
 
-export function TreeCanvas({ graph, isLoading = false, onPersonSelect, onFamilyGroupSelect }: TreeCanvasProps) {
+export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(
+  function TreeCanvas({ graph, isLoading = false, onPersonSelect, onFamilyGroupSelect }, ref) {
   return (
     <ReactFlowProvider>
       <TreeCanvasInner
+        ref={ref}
         graph={graph}
         isLoading={isLoading}
         onPersonSelect={onPersonSelect}
@@ -495,6 +514,6 @@ export function TreeCanvas({ graph, isLoading = false, onPersonSelect, onFamilyG
       />
     </ReactFlowProvider>
   );
-}
+});
 
 export default TreeCanvas;

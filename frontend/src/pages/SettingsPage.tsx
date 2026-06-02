@@ -10,9 +10,22 @@ interface UserProfile {
   given_name: string | null;
   family_name: string | null;
   email: string;
+  app_role: 'ADMIN' | 'STANDARD' | 'AUDITOR';
   locale: string;
   timezone: string;
 }
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN:    'Admin',
+  STANDARD: 'Standard',
+  AUDITOR:  'Auditor',
+};
+
+const ROLE_BADGE: Record<string, string> = {
+  ADMIN:    'bg-purple-100 text-purple-700',
+  STANDARD: 'bg-blue-100 text-blue-700',
+  AUDITOR:  'bg-amber-100 text-amber-700',
+};
 
 function TabLink({ tab, active }: { tab: Tab; active: boolean }) {
   const label = tab.charAt(0).toUpperCase() + tab.slice(1);
@@ -173,6 +186,17 @@ export default function SettingsPage() {
               disabled
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <div className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50">
+              {profile?.app_role && (
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${ROLE_BADGE[profile.app_role] ?? ROLE_BADGE.STANDARD}`}>
+                  {ROLE_LABEL[profile.app_role] ?? profile.app_role}
+                </span>
+              )}
+              <span className="text-xs text-gray-400">Assigned by an administrator</span>
+            </div>
           </div>
           {profileMsg && (
             <p className={`text-sm ${profileMsg.ok ? 'text-green-600' : 'text-red-600'}`}>{profileMsg.text}</p>

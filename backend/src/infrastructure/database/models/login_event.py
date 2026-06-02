@@ -23,6 +23,7 @@ class LoginEventModel(Base):
     )
     user_display_name: Mapped[str] = mapped_column(String(512), nullable=False)
     user_email: Mapped[str] = mapped_column(String(254), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'LOGIN'"))
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)

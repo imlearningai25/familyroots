@@ -30,6 +30,32 @@ from tests.conftest import (
 pytestmark = pytest.mark.asyncio
 
 
+# ── Register ──────────────────────────────────────────────────────
+
+class TestRegister:
+    async def test_register_returns_none(self, auth_service, fake_uow):
+        """Registration returns None — no tokens issued."""
+        req = RegisterRequest(email="new@example.com", password="Password1", given_name="New", family_name="User")
+        result = await auth_service.register(req)
+        assert result is None
+
+    async def test_register_creates_user_unverified(self, auth_service, fake_uow):
+        """Registered user starts unverified."""
+        req = RegisterRequest(email="unverified@example.com", password="Password1", given_name="A", family_name="B")
+        await auth_service.register(req)
+        users = fake_uow.users._users
+        new_user = next((u for u in users if u.email == "unverified@example.com"), None)
+        assert new_user is not None
+        assert new_user.email_verified is False
+        assert new_user.email_verification_token is not None
+
+    async def test_register_duplicate_email_raises(self, auth_service, fake_uow, verified_user):
+        """Duplicate email in the same tenant raises AlreadyExistsError."""
+        req = RegisterRequest(email="alice@example.com", password="Password1", given_name="A", family_name="B")
+        with pytest.raises(AlreadyExistsError):
+            await auth_service.register(req)
+
+
 # ── Login ─────────────────────────────────────────────────────────
 
 class TestLogin:
@@ -211,3 +237,49 @@ class TestPasswordReset:
         from src.domain.exceptions import TokenExpiredError
         with pytest.raises(TokenExpiredError):
             await auth_service.reset_password("expired-token", "NewPassword1")
+
+
+# ── Forgot password ───────────────────────────────────────────────
+
+class TestForgotPassword:
+    async def test_forgot_password_unverified_raises(self, auth_service, verified_user):
+        """forgot_password raises AccountNotVerifiedError for unverified accounts."""
+        verified_user.email_verified = False
+        with pytest.raises(AccountNotVerifiedError):
+            await auth_service.forgot_password("alice@example.com")
+
+    async def test_forgot_password_unknown_email_is_noop(self, auth_service):
+        """forgot_password silently succeeds for unknown email (no enumeration)."""
+        # Should not raise
+        await auth_service.forgot_password("nobody@example.com")
+
+    async def test_forgot_password_sets_reset_token(self, auth_service, fake_uow, verified_user):
+        """forgot_password sets password_reset_token on verified user."""
+        assert verified_user.password_reset_token is None
+        await auth_service.forgot_password("alice@example.com")
+        assert verified_user.password_reset_token is not None
+        assert verified_user.password_reset_expires_at is not None
+
+
+# ── Resend verification ───────────────────────────────────────────
+
+class TestResendVerification:
+    async def test_resend_replaces_token(self, auth_service, fake_uow, verified_user):
+        """resend_verification generates a new token for an unverified user."""
+        verified_user.email_verified = False
+        old_token = "old-token-xyz"
+        verified_user.email_verification_token = old_token
+        await auth_service.resend_verification("alice@example.com")
+        assert verified_user.email_verification_token != old_token
+        assert verified_user.email_verification_token is not None
+
+    async def test_resend_noop_for_verified(self, auth_service, verified_user):
+        """resend_verification is a no-op if already verified."""
+        original_token = verified_user.email_verification_token
+        await auth_service.resend_verification("alice@example.com")
+        assert verified_user.email_verification_token == original_token
+
+    async def test_resend_noop_for_unknown(self, auth_service):
+        """resend_verification is a silent no-op for unknown email."""
+        # Should not raise
+        await auth_service.resend_verification("ghost@example.com")

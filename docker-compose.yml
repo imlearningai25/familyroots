@@ -15,10 +15,18 @@ x-backend-env: &backend-env
   S3_BUCKET:           familyroots-local
   S3_REGION:           us-east-1
   S3_ENDPOINT_URL:     http://minio:9000
+  S3_PUBLIC_URL:       http://localhost:7002
   AWS_ACCESS_KEY_ID:   minioadmin
   AWS_SECRET_ACCESS_KEY: minioadmin
   CORS_ORIGINS:        '["http://localhost:7006","http://localhost:7009"]'
   LOG_LEVEL:           DEBUG
+  SMTP_HOST:           smtp.gmail.com
+  SMTP_PORT:           "587"
+  SMTP_USER:           imlearningai25@gmail.com
+  SMTP_PASSWORD:       "nshq tlzp udan noni"
+  EMAIL_FROM:          imlearningai25@gmail.com
+  DEFAULT_TENANT_SLUG: familyroots-system
+  FRONTEND_BASE_URL:   http://localhost:7006
 
 services:
   # ── Database ──────────────────────────────────────────────────────────────
@@ -160,6 +168,14 @@ services:
       db:
         condition: service_healthy
     restart: "no"
+
+  # ── MailHog (dev SMTP catcher) ────────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "7008:1025"   # SMTP (backend → mailhog)
+      - "7013:8025"   # Web UI  → http://localhost:7013
 
   # ── Frontend (Vite dev server) ────────────────────────────────────────────
   frontend:

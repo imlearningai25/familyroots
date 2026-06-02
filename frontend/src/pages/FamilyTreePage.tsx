@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { TreeCanvas } from '@features/tree/canvas/TreeCanvas';
+import { TreeCanvas, type TreeCanvasHandle } from '@features/tree/canvas/TreeCanvas';
 import { useCanvasStore } from '@store/canvas.store';
 import { useAuthStore } from '@store/auth.store';
 import { queryKeys } from '@queries/keys';
@@ -907,6 +907,7 @@ interface SelectionPanelProps {
   personName: string;
   treeId: string;
   token: string | null;
+  canWrite: boolean;
   onClose: () => void;
   onAddParent: () => void;
   onAddChild: () => void;
@@ -917,7 +918,7 @@ interface SelectionPanelProps {
 }
 
 function SelectionPanel({
-  personId, personName, treeId, token,
+  personId, personName, treeId, token, canWrite,
   onClose, onAddParent, onAddChild, onAddSpouse, onSetFocus, onDeleted, onEdit,
 }: SelectionPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -971,60 +972,71 @@ function SelectionPanel({
           >
             👤 Open Profile
           </Link>
-          <button onClick={onEdit}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
-            ✏️ Edit
-          </button>
-          <button onClick={onAddParent}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
-            ➕ Add Parent
-          </button>
-          <button onClick={onAddChild}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
-            ➕ Add Child
-          </button>
-          <button onClick={onAddSpouse}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
-            ➕ Add Spouse
-          </button>
+          {canWrite && (
+            <button onClick={onEdit}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
+              ✏️ Edit
+            </button>
+          )}
+          {canWrite && (
+            <button onClick={onAddParent}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
+              ➕ Add Parent
+            </button>
+          )}
+          {canWrite && (
+            <button onClick={onAddChild}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
+              ➕ Add Child
+            </button>
+          )}
+          {canWrite && (
+            <button onClick={onAddSpouse}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
+              ➕ Add Spouse
+            </button>
+          )}
           <button onClick={onSetFocus}
             className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
             🎯 Set as Focus
           </button>
 
-          {/* Divider */}
-          <div className="pt-2 border-t border-slate-100" />
-
-          {!confirmDelete ? (
-            <button
-              onClick={() => { setDeleteError(''); setConfirmDelete(true); }}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 rounded-lg hover:bg-red-50 border border-red-100"
-            >
-              🗑 Delete person
-            </button>
-          ) : (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
-              <p className="text-xs text-red-700 font-medium">
-                Remove <span className="font-semibold">{personName || 'this person'}</span> from the tree?
-              </p>
-              {deleteError && <p className="text-xs text-red-600">{deleteError}</p>}
-              <div className="flex gap-2">
+          {/* Divider + delete — write only */}
+          {canWrite && (
+            <>
+              <div className="pt-2 border-t border-slate-100" />
+              {!confirmDelete ? (
                 <button
-                  onClick={() => { setConfirmDelete(false); setDeleteError(''); }}
-                  disabled={deleting}
-                  className="flex-1 h-7 text-xs border border-slate-300 bg-white rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => { setDeleteError(''); setConfirmDelete(true); }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 rounded-lg hover:bg-red-50 border border-red-100"
                 >
-                  Cancel
+                  🗑 Delete person
                 </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="flex-1 h-7 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                >
-                  {deleting ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            </div>
+              ) : (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+                  <p className="text-xs text-red-700 font-medium">
+                    Remove <span className="font-semibold">{personName || 'this person'}</span> from the tree?
+                  </p>
+                  {deleteError && <p className="text-xs text-red-600">{deleteError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setConfirmDelete(false); setDeleteError(''); }}
+                      disabled={deleting}
+                      className="flex-1 h-7 text-xs border border-slate-300 bg-white rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className="flex-1 h-7 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {deleting ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1153,9 +1165,12 @@ function TreeTopBar({
   personCount,
   graph,
   token,
+  canWrite,
   onAddPerson,
   onMembers,
   onResetLayout,
+  onLayouts,
+  onExportCsv,
   onShowActivity,
 }: {
   treeName: string;
@@ -1163,9 +1178,12 @@ function TreeTopBar({
   personCount: number;
   graph: import('@features/tree/types').ApiTreeGraph | null;
   token: string | null;
+  canWrite: boolean;
   onAddPerson: () => void;
   onMembers: () => void;
   onResetLayout: () => void;
+  onLayouts: () => void;
+  onExportCsv: () => void;
   onShowActivity: () => void;
 }) {
   const [exportingZip, setExportingZip] = React.useState(false);
@@ -1264,11 +1282,27 @@ function TreeTopBar({
           {' '}.zip + photos
         </button>
         <button
+          onClick={onExportCsv}
+          disabled={!graph}
+          title="Export tree data as .csv"
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-40"
+        >
+          ↓ .csv
+        </button>
+        <div className="w-px h-4 bg-slate-200" />
+        <button
+          onClick={onLayouts}
+          title="Save or load a named layout"
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+        >
+          Layouts
+        </button>
+        <button
           onClick={onResetLayout}
           title="Snap nodes back to layout and fit view"
           className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
         >
-          ↺ Reset layout
+          ↺ Reset
         </button>
         <button
           onClick={onMembers}
@@ -1276,12 +1310,14 @@ function TreeTopBar({
         >
           Members
         </button>
-        <button
-          onClick={onAddPerson}
-          className="px-3 py-1.5 bg-brand-500 text-white text-xs font-medium rounded-lg hover:bg-brand-600 transition-colors"
-        >
-          + Add person
-        </button>
+        {canWrite && (
+          <button
+            onClick={onAddPerson}
+            className="px-3 py-1.5 bg-brand-500 text-white text-xs font-medium rounded-lg hover:bg-brand-600 transition-colors"
+          >
+            + Add person
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1289,8 +1325,82 @@ function TreeTopBar({
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
+// ── Saved layouts ──────────────────────────────────────────────────────────
+
+interface SavedLayout {
+  id: string;
+  name: string;
+  savedAt: string;
+  positions: Record<string, { x: number; y: number }>;
+}
+
+function layoutsKey(treeId: string) { return `fr:layouts:${treeId}`; }
+
+function loadLayouts(treeId: string): SavedLayout[] {
+  try { return JSON.parse(localStorage.getItem(layoutsKey(treeId)) ?? '[]'); }
+  catch { return []; }
+}
+
+function saveLayouts(treeId: string, layouts: SavedLayout[]) {
+  localStorage.setItem(layoutsKey(treeId), JSON.stringify(layouts));
+}
+
+// ── CSV export ─────────────────────────────────────────────────────────────
+
+function exportTreeCsv(graph: import('@features/tree/types').ApiTreeGraph, treeName: string) {
+  const personMap = new Map(graph.persons.map((p) => [p.id, p]));
+  const personParents = new Map<string, [string, string]>();
+  for (const fg of graph.familyGroups) {
+    for (const childId of Object.keys(fg.children)) {
+      personParents.set(childId, [fg.parentIds[0] ?? '', fg.parentIds[1] ?? '']);
+    }
+  }
+
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+
+  const header = [
+    'ID', 'First Name', 'Last Name', 'Sex', 'Status',
+    'Parent 1 ID', 'Parent 1 First Name', 'Parent 1 Last Name',
+    'Parent 2 ID', 'Parent 2 First Name', 'Parent 2 Last Name',
+  ].map(escape).join(',');
+
+  const rows = graph.persons.map((p) => {
+    const [p1id, p2id] = personParents.get(p.id) ?? ['', ''];
+    const p1 = personMap.get(p1id);
+    const p2 = personMap.get(p2id);
+    const status = p.isDeceased ? 'Deceased' : p.isLiving ? 'Living' : 'Unknown';
+    return [
+      p.id,
+      p.displayGivenName ?? '',
+      p.displaySurname ?? '',
+      p.sex,
+      status,
+      p1id,
+      p1?.displayGivenName ?? '',
+      p1?.displaySurname ?? '',
+      p2id,
+      p2?.displayGivenName ?? '',
+      p2?.displaySurname ?? '',
+    ].map((v) => escape(String(v))).join(',');
+  });
+
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${treeName.replace(/\s+/g, '_')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────
+
 export default function FamilyTreePage() {
   const { treeId } = useParams<{ treeId: string }>();
+
+  const canvasRef = React.useRef<TreeCanvasHandle>(null);
+  const [showLayouts,     setShowLayouts]     = useState(false);
 
   const [panelPersonId,     setPanelPersonId]     = useState<string | null>(null);
   const [showAddPerson,     setShowAddPerson]     = useState(false);
@@ -1352,6 +1462,7 @@ export default function FamilyTreePage() {
   const treeName        = (graph as any)?.treeName ?? 'Family Tree';
   const treeDescription = (graph as any)?.treeDescription ?? null;
   const personCount     = graph?.persons.length ?? 0;
+  const canWrite        = (graph as any)?.userRole !== 'VIEWER';
 
   return (
     <div className="fixed inset-0 flex flex-col">
@@ -1361,17 +1472,23 @@ export default function FamilyTreePage() {
         personCount={personCount}
         graph={graph ?? null}
         token={accessToken}
+        canWrite={canWrite}
         onAddPerson={() => setShowAddPerson(true)}
         onMembers={() => setShowMembers(true)}
         onResetLayout={bumpLayoutReset}
+        onLayouts={() => setShowLayouts(true)}
+        onExportCsv={() => graph && exportTreeCsv(graph, treeName)}
+        onShowActivity={() => setShowActivity(true)}
       />
 
       <div className="flex-1 relative mt-12">
         <TreeCanvas
+          ref={canvasRef}
           graph={graph ?? null}
           isLoading={isLoading}
           onPersonSelect={handlePersonSelect}
           onFamilyGroupSelect={(fgId) => {
+            if (!canWrite) return;
             setPanelPersonId(null);
             setUnionChildFgId(fgId);
           }}
@@ -1383,6 +1500,7 @@ export default function FamilyTreePage() {
           personName={panelPersonName}
           treeId={treeId ?? ''}
           token={accessToken}
+          canWrite={canWrite}
           onClose={handlePanelClose}
           onAddParent={() => setRelationMode('parent')}
           onAddChild={()  => setRelationMode('child')}
@@ -1393,7 +1511,7 @@ export default function FamilyTreePage() {
         />
       </div>
 
-      {showAddPerson && (
+      {canWrite && showAddPerson && (
         <AddPersonModal
           treeId={treeId ?? ''}
           token={accessToken}
@@ -1402,7 +1520,7 @@ export default function FamilyTreePage() {
         />
       )}
 
-      {relationMode && panelPersonId && (() => {
+      {canWrite && relationMode && panelPersonId && (() => {
         const alreadyHasParents = new Set(
           (graph?.familyGroups ?? []).flatMap((g) => Object.keys(g.children))
         );
@@ -1440,7 +1558,7 @@ export default function FamilyTreePage() {
         );
       })()}
 
-      {showEdit && panelPersonId && (() => {
+      {canWrite && showEdit && panelPersonId && (() => {
         const p = graph?.persons.find((x) => x.id === panelPersonId);
         if (!p) return null;
         const initial: EditPersonFields = {
@@ -1469,6 +1587,15 @@ export default function FamilyTreePage() {
           token={accessToken}
           currentUserId={useAuthStore.getState().user?.id ?? ''}
           onClose={() => setShowMembers(false)}
+        />
+      )}
+
+      {showLayouts && treeId && (
+        <LayoutsModal
+          treeId={treeId}
+          onGetPositions={() => canvasRef.current?.getPositions() ?? {}}
+          onLoadPositions={(p) => canvasRef.current?.loadPositions(p)}
+          onClose={() => setShowLayouts(false)}
         />
       )}
 
@@ -1510,6 +1637,122 @@ export default function FamilyTreePage() {
           />
         );
       })()}
+    </div>
+  );
+}
+
+// ── Layouts Modal ──────────────────────────────────────────────────────────
+
+function LayoutsModal({
+  treeId,
+  onGetPositions,
+  onLoadPositions,
+  onClose,
+}: {
+  treeId: string;
+  onGetPositions: () => Record<string, { x: number; y: number }>;
+  onLoadPositions: ((p: Record<string, { x: number; y: number }>) => void) | undefined;
+  onClose: () => void;
+}) {
+  const [layouts, setLayouts] = useState<SavedLayout[]>(() => loadLayouts(treeId));
+  const [saveName, setSaveName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    const name = saveName.trim();
+    if (!name) return;
+    setSaving(true);
+    const positions = onGetPositions();
+    const newLayout: SavedLayout = {
+      id: crypto.randomUUID(),
+      name,
+      savedAt: new Date().toISOString(),
+      positions,
+    };
+    const updated = [newLayout, ...layouts];
+    saveLayouts(treeId, updated);
+    setLayouts(updated);
+    setSaveName('');
+    setSaving(false);
+  }
+
+  function handleLoad(layout: SavedLayout) {
+    onLoadPositions?.(layout.positions);
+    onClose();
+  }
+
+  function handleDelete(id: string) {
+    const updated = layouts.filter((l) => l.id !== id);
+    saveLayouts(treeId, updated);
+    setLayouts(updated);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">Saved layouts</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {/* Save current */}
+        <form onSubmit={handleSave} className="flex gap-2 mb-5">
+          <input
+            type="text"
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder="Layout name…"
+            maxLength={60}
+            className="flex-1 h-9 px-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <button
+            type="submit"
+            disabled={saving || !saveName.trim()}
+            className="h-9 px-4 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            Save current
+          </button>
+        </form>
+
+        {/* Saved list */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {layouts.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-8">
+              No layouts saved yet. Arrange the canvas and save it with a name.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {layouts.map((l) => (
+                <div key={l.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{l.name}</p>
+                    <p className="text-xs text-slate-400">
+                      {new Date(l.savedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                      {' · '}{Object.keys(l.positions).length} nodes
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleLoad(l)}
+                    className="px-2.5 py-1 text-xs font-medium text-brand-600 bg-white border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors whitespace-nowrap"
+                  >
+                    Load
+                  </button>
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    className="px-2.5 py-1 text-xs font-medium text-red-500 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

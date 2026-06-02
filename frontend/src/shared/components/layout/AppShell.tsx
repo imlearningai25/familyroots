@@ -12,11 +12,14 @@ export default function AppShell() {
 
   const isElevated = user?.appRole === 'ADMIN' || user?.appRole === 'AUDITOR';
 
+  const isAdmin = user?.appRole === 'ADMIN';
+
   const nav = [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/search',    label: 'Search' },
     { to: '/reports',   label: 'Reports' },
     ...(isElevated ? [{ to: '/activity', label: 'Activity' }] : []),
+    ...(isAdmin    ? [{ to: '/admin',    label: 'Admin Dashboard' }]    : []),
     { to: '/settings',  label: 'Settings' },
   ];
 

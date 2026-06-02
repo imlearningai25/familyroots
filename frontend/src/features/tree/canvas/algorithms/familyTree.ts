@@ -52,7 +52,10 @@ export function familyTreeLayout(
     const k = `p:${id}`;
     if (wMemo.has(k)) return wMemo.get(k)!;
     const fgIds = personChildFGs.get(id) ?? [];
-    const w = fgIds.length > 0 ? fgW(fgIds[0]) : PW;
+    // Sum widths across all family groups this person parents (multiple unions)
+    const w = fgIds.length > 0
+      ? fgIds.reduce((acc, fgId, i) => acc + fgW(fgId) + (i > 0 ? sibGap : 0), 0)
+      : PW;
     wMemo.set(k, w);
     return w;
   }
@@ -120,7 +123,12 @@ export function familyTreeLayout(
       if (!placedPersons.has(cId)) {
         const cFGIds = personChildFGs.get(cId) ?? [];
         if (cFGIds.length > 0) {
-          placeFG(cFGIds[0], childX, childRowY);
+          // Place all family groups this child leads as a parent
+          let fgX = childX;
+          for (const cFgId of cFGIds) {
+            placeFG(cFgId, fgX, childRowY);
+            fgX += fgW(cFgId) + sibGap;
+          }
         } else {
           result.push({ id: cId, x: childX + cw / 2 - PW / 2, y: childRowY });
           placedPersons.add(cId);

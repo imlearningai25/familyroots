@@ -12,18 +12,25 @@ pytestmark = pytest.mark.asyncio
 
 
 class TestRegister:
-    async def test_register_returns_201(self, test_client: AsyncClient) -> None:
+    async def test_register_returns_204(self, test_client: AsyncClient) -> None:
         resp = await test_client.post("/api/v1/auth/register", json={
             "email": "bob@example.com",
             "password": "Password1",
             "given_name": "Bob",
             "family_name": "Smith",
-            "tenant_slug": "bob-org",
         })
-        assert resp.status_code == 201
-        data = resp.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
+        assert resp.status_code == 204
+        assert resp.content == b""  # no body
+
+    async def test_register_does_not_set_session_cookie(self, test_client: AsyncClient) -> None:
+        resp = await test_client.post("/api/v1/auth/register", json={
+            "email": "nocookie@example.com",
+            "password": "Password1",
+            "given_name": "No",
+            "family_name": "Cookie",
+        })
+        assert resp.status_code == 204
+        assert "refresh_token" not in resp.cookies
 
     async def test_register_duplicate_email_returns_409(self, test_client: AsyncClient) -> None:
         payload = {
@@ -31,7 +38,6 @@ class TestRegister:
             "password": "Password1",
             "given_name": "A",
             "family_name": "B",
-            "tenant_slug": "dup-org",
         }
         await test_client.post("/api/v1/auth/register", json=payload)
         resp = await test_client.post("/api/v1/auth/register", json=payload)
@@ -43,7 +49,6 @@ class TestRegister:
             "password": "short",
             "given_name": "A",
             "family_name": "B",
-            "tenant_slug": "weak-org",
         })
         assert resp.status_code == 422
 
@@ -53,27 +58,34 @@ class TestRegister:
             "password": "Password1",
             "given_name": "A",
             "family_name": "B",
-            "tenant_slug": "bad-email-org",
         })
         assert resp.status_code == 422
 
+    async def test_register_no_tenant_slug_field(self, test_client: AsyncClient) -> None:
+        """tenant_slug is no longer accepted — payload without it must succeed."""
+        resp = await test_client.post("/api/v1/auth/register", json={
+            "email": "notenant@example.com",
+            "password": "Password1",
+            "given_name": "No",
+            "family_name": "Tenant",
+        })
+        assert resp.status_code == 204
+
 
 class TestLogin:
-    async def test_valid_credentials_returns_200(self, test_client: AsyncClient) -> None:
-        # Register first
+    async def test_unverified_user_cannot_login(self, test_client: AsyncClient) -> None:
         await test_client.post("/api/v1/auth/register", json={
             "email": "charlie@example.com",
             "password": "Password1",
             "given_name": "Charlie",
             "family_name": "Brown",
-            "tenant_slug": "charlie-co",
         })
         resp = await test_client.post("/api/v1/auth/login", json={
             "email": "charlie@example.com",
             "password": "Password1",
         })
-        # Unverified email → 403
-        assert resp.status_code in (200, 403)
+        # Registration no longer verifies email — login must be blocked
+        assert resp.status_code == 403
 
     async def test_wrong_password_returns_401(self, test_client: AsyncClient) -> None:
         resp = await test_client.post("/api/v1/auth/login", json={
@@ -105,10 +117,39 @@ class TestVerifyEmail:
         assert resp.status_code == 401
 
 
-class TestForgotPassword:
+class TestResendVerification:
     async def test_always_returns_204(self, test_client: AsyncClient) -> None:
-        resp = await test_client.post("/api/v1/auth/forgot-password", json={"email": "any@example.com"})
+        """resend-verification never reveals whether the email exists."""
+        resp = await test_client.post("/api/v1/auth/resend-verification",
+                                       json={"email": "any@example.com"})
         assert resp.status_code == 204
+
+    async def test_verified_user_also_returns_204(self, test_client: AsyncClient) -> None:
+        resp = await test_client.post("/api/v1/auth/resend-verification",
+                                       json={"email": "verified@example.com"})
+        assert resp.status_code == 204
+
+
+class TestForgotPassword:
+    async def test_unknown_email_returns_204(self, test_client: AsyncClient) -> None:
+        """Unknown email is silently ignored to prevent enumeration."""
+        resp = await test_client.post("/api/v1/auth/forgot-password",
+                                       json={"email": "unknown@example.com"})
+        assert resp.status_code == 204
+
+    async def test_unverified_account_returns_403(self, test_client: AsyncClient) -> None:
+        """Unverified accounts cannot request password reset."""
+        await test_client.post("/api/v1/auth/register", json={
+            "email": "unverified@example.com",
+            "password": "Password1",
+            "given_name": "A",
+            "family_name": "B",
+        })
+        resp = await test_client.post("/api/v1/auth/forgot-password",
+                                       json={"email": "unverified@example.com"})
+        assert resp.status_code == 403
+        data = resp.json()
+        assert "account-not-verified" in data.get("type", "")
 
 
 class TestHealth:

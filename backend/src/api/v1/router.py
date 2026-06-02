@@ -3,10 +3,12 @@
 from fastapi import APIRouter
 
 from src.api.v1.activity import router as activity_router
+from src.api.v1.admin import router as admin_router
 from src.api.v1.auth import router as auth_router
 from src.api.v1.collaboration import router as collaboration_router
 from src.api.v1.media import router as media_router
 from src.api.v1.oauth import router as oauth_router
+from src.api.v1.permission_groups import router as permission_groups_router
 from src.api.v1.persons import router as persons_router
 from src.api.v1.search import router as search_router
 from src.api.v1.users import router as users_router
@@ -21,3 +23,5 @@ v1_router.include_router(collaboration_router)
 v1_router.include_router(media_router)
 v1_router.include_router(search_router)
 v1_router.include_router(activity_router)
+v1_router.include_router(admin_router)
+v1_router.include_router(permission_groups_router)

@@ -23,6 +23,7 @@ def get_media_service(session: SessionDep) -> MediaApplicationService:
         access_key_id=settings.aws_access_key_id or None,
         secret_access_key=settings.aws_secret_access_key or None,
         endpoint_url=settings.s3_endpoint_url or None,
+        public_url=settings.s3_public_url or None,
     )
     return MediaApplicationService(repo=repo, s3=s3)
 

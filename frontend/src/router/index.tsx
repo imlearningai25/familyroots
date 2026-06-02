@@ -23,14 +23,17 @@ const RegisterPage        = lazy(() => import('@pages/auth/RegisterPage'));
 const OAuthCallbackPage   = lazy(() => import('@pages/auth/OAuthCallbackPage'));
 const ForgotPasswordPage  = lazy(() => import('@pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage   = lazy(() => import('@pages/auth/ResetPasswordPage'));
+const VerifyEmailPage     = lazy(() => import('@pages/auth/VerifyEmailPage'));
 
-const DashboardPage      = lazy(() => import('@pages/DashboardPage'));
+const DashboardPage           = lazy(() => import('@pages/DashboardPage'));
+const InvitationAcceptPage    = lazy(() => import('@pages/InvitationAcceptPage'));
 const FamilyTreePage     = lazy(() => import('@pages/FamilyTreePage'));
 const ProfilePage        = lazy(() => import('@pages/ProfilePage'));
 const SearchPage         = lazy(() => import('@pages/SearchPage'));
 const ReportsPage        = lazy(() => import('@pages/ReportsPage'));
 const SettingsPage       = lazy(() => import('@pages/SettingsPage'));
 const ActivityPage       = lazy(() => import('@pages/ActivityPage'));
+const AdminPage          = lazy(() => import('@pages/AdminPage'));
 const NotFoundPage       = lazy(() => import('@pages/NotFoundPage'));
 
 // AppShell wraps all authenticated routes (sidebar + topbar)
@@ -61,6 +64,7 @@ const router = createBrowserRouter([
       { path: '/register',         element: <Lazy><RegisterPage /></Lazy> },
       { path: '/forgot-password',  element: <Lazy><ForgotPasswordPage /></Lazy> },
       { path: '/reset-password',   element: <Lazy><ResetPasswordPage /></Lazy> },
+      { path: '/verify-email',     element: <Lazy><VerifyEmailPage /></Lazy> },
     ],
   },
 
@@ -68,6 +72,12 @@ const router = createBrowserRouter([
   {
     path: '/auth/callback',
     element: <Lazy><OAuthCallbackPage /></Lazy>,
+  },
+
+  // ── Invitation accept (public — handles its own auth check) ──────────
+  {
+    path: '/invitations/accept',
+    element: <Lazy><InvitationAcceptPage /></Lazy>,
   },
 
   // ── Full-screen tree canvas (authenticated, no AppShell) ──────────────
@@ -96,6 +106,7 @@ const router = createBrowserRouter([
           { path: '/settings',                               element: <Lazy><SettingsPage /></Lazy> },
           { path: '/settings/:tab',                          element: <Lazy><SettingsPage /></Lazy> },
           { path: '/activity',                               element: <Lazy><ActivityPage /></Lazy> },
+          { path: '/admin',                                  element: <Lazy><AdminPage /></Lazy> },
         ],
       },
     ],

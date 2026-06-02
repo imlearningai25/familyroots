@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@store/auth.store';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -9,7 +8,6 @@ async function register(body: {
   password: string;
   given_name: string;
   family_name: string;
-  tenant_slug: string;
 }) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: 'POST',
@@ -21,44 +19,19 @@ async function register(body: {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? 'Registration failed');
   }
-  return res.json();
 }
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 export default function RegisterPage() {
-  const navigate   = useNavigate();
-  const storeLogin = useAuthStore((s) => s.login);
+  const navigate = useNavigate();
 
-  const [givenName,   setGivenName]   = useState('');
-  const [familyName,  setFamilyName]  = useState('');
-  const [tenantSlug,  setTenantSlug]  = useState('');
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [email,       setEmail]       = useState('');
-  const [password,    setPassword]    = useState('');
-  const [confirm,     setConfirm]     = useState('');
-  const [error,       setError]       = useState('');
-  const [loading,     setLoading]     = useState(false);
-
-  function handleGivenNameChange(v: string) {
-    setGivenName(v);
-    if (!slugTouched) {
-      setTenantSlug(slugify(`${v}-${familyName}`));
-    }
-  }
-
-  function handleFamilyNameChange(v: string) {
-    setFamilyName(v);
-    if (!slugTouched) {
-      setTenantSlug(slugify(`${givenName}-${v}`));
-    }
-  }
+  const [givenName,  setGivenName]  = useState('');
+  const [familyName, setFamilyName] = useState('');
+  const [email,      setEmail]      = useState('');
+  const [password,   setPassword]   = useState('');
+  const [confirm,    setConfirm]    = useState('');
+  const [error,      setError]      = useState('');
+  const [loading,    setLoading]    = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,16 +42,8 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      const data = await register({ email, password, given_name: givenName, family_name: familyName, tenant_slug: tenantSlug });
-      storeLogin(data.access_token, {
-        id: data.user_id,
-        tenantId: data.tenant_id,
-        email,
-        displayName: `${givenName} ${familyName}`.trim() || email,
-        avatarUrl: undefined,
-        isEmailVerified: false,
-      });
-      navigate('/dashboard', { replace: true });
+      await register({ email, password, given_name: givenName, family_name: familyName });
+      navigate('/login?registered=1', { replace: true });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -109,7 +74,7 @@ export default function RegisterPage() {
                   type="text"
                   autoComplete="given-name"
                   value={givenName}
-                  onChange={(e) => handleGivenNameChange(e.target.value)}
+                  onChange={(e) => setGivenName(e.target.value)}
                   required
                   className="w-full h-10 px-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   placeholder="Alice"
@@ -123,35 +88,10 @@ export default function RegisterPage() {
                   type="text"
                   autoComplete="family-name"
                   value={familyName}
-                  onChange={(e) => handleFamilyNameChange(e.target.value)}
+                  onChange={(e) => setFamilyName(e.target.value)}
                   required
                   className="w-full h-10 px-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   placeholder="Smith"
-                />
-              </div>
-            </div>
-
-            {/* Organisation slug */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Organisation ID
-                <span className="ml-1 text-xs text-slate-400 font-normal">(your unique family workspace)</span>
-              </label>
-              <div className="flex items-center h-10 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-brand-500 focus-within:border-transparent overflow-hidden">
-                <span className="pl-3 pr-1 text-sm text-slate-400 select-none shrink-0">familyroots.app/</span>
-                <input
-                  type="text"
-                  value={tenantSlug}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setTenantSlug(slugify(e.target.value));
-                  }}
-                  required
-                  minLength={3}
-                  maxLength={100}
-                  pattern="^[a-z0-9][a-z0-9\-]{1,98}[a-z0-9]$"
-                  className="flex-1 h-full pr-3 text-sm bg-transparent focus:outline-none"
-                  placeholder="smith-family"
                 />
               </div>
             </div>

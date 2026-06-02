@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     frontend_base_url: str = "http://localhost:5173"
     default_tenant_id: str = ""
+    default_tenant_slug: str = "familyroots-system"
 
     # ── Email ────────────────────────────────────────────────
     smtp_host: str = "localhost"

@@ -11,35 +11,45 @@ import { OAuthButtons } from '@features/auth/components/OAuthButtons';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
+class UnverifiedError extends Error {
+  constructor() { super('unverified'); }
+}
+
 async function login(email: string, password: string) {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',  // receive httpOnly refresh_token cookie
+    credentials: 'include',
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? 'Invalid email or password');
+    if (res.status === 403 && String((err as any).type ?? '').includes('account-not-verified')) {
+      throw new UnverifiedError();
+    }
+    throw new Error((err as any).detail ?? 'Invalid email or password');
   }
   return res.json();
 }
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const storeLogin = useAuthStore((s) => s.login);
+  const navigate    = useNavigate();
+  const storeLogin  = useAuthStore((s) => s.login);
+  const justRegistered = searchParams.get('registered') === '1';
 
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [email,       setEmail]       = useState('');
+  const [password,    setPassword]    = useState('');
+  const [error,       setError]       = useState('');
+  const [unverified,  setUnverified]  = useState(false);
+  const [loading,     setLoading]     = useState(false);
 
   const oauthError = searchParams.get('error');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setUnverified(false);
     setLoading(true);
     try {
       const data = await login(email, password);
@@ -61,7 +71,11 @@ export default function LoginPage() {
       const next = searchParams.get('next') ?? '/dashboard';
       navigate(next, { replace: true });
     } catch (err) {
-      setError((err as Error).message);
+      if (err instanceof UnverifiedError) {
+        setUnverified(true);
+      } else {
+        setError((err as Error).message);
+      }
     } finally {
       setLoading(false);
     }
@@ -79,6 +93,16 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-7">
+          {/* Registration success banner */}
+          {justRegistered && (
+            <div className="mb-4 px-3 py-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm font-medium text-green-800">Account created!</p>
+              <p className="text-xs text-green-700 mt-0.5">
+                Check your inbox for a verification link. You must verify your email before signing in.
+              </p>
+            </div>
+          )}
+
           {/* OAuth error banner */}
           {oauthError && (
             <div className="mb-4 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -136,6 +160,12 @@ export default function LoginPage() {
               />
             </div>
 
+            {unverified && (
+              <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <p className="font-medium mb-0.5">Email not verified</p>
+                <p className="text-xs">Check your inbox for a verification link. Contact an admin if you need help.</p>
+              </div>
+            )}
             {error && (
               <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
                 {error}

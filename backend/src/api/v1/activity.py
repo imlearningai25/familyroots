@@ -79,7 +79,7 @@ _LOGIN_SELECT = """
         le.id,
         le.user_id                                                 AS actor_id,
         le.user_display_name                                       AS actor_display_name,
-        CASE WHEN le.success THEN 'LOGIN' ELSE 'FAILED_LOGIN' END AS action,
+        le.event_type                                              AS action,
         'USER'                                                     AS entity_type,
         le.user_id                                                 AS entity_id,
         le.user_email                                              AS entity_display_name,
@@ -120,10 +120,9 @@ def _build_query(
 
     if action_filter:
         params["action_filter"] = action_filter
-        if action_filter in ("LOGIN", "FAILED_LOGIN"):
-            # Audit part should return nothing; login part filtered below
+        if action_filter in ("LOGIN", "FAILED_LOGIN", "LOGOUT"):
             audit_where += " AND false"
-            login_where += " AND CASE WHEN le.success THEN 'LOGIN' ELSE 'FAILED_LOGIN' END = :action_filter"
+            login_where += " AND le.event_type = :action_filter"
         else:
             audit_where += " AND al.action::text = :action_filter"
             login_where += " AND false"

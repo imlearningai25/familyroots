@@ -38,8 +38,18 @@ interface ActivityResponse {
 
 const ACTION_OPTIONS = [
   { value: '', label: 'All actions' },
+  // Auth
   { value: 'LOGIN', label: 'Login' },
+  { value: 'LOGOUT', label: 'Logout' },
   { value: 'FAILED_LOGIN', label: 'Failed login' },
+  // Admin — user management
+  { value: 'ADMIN_CREATE', label: 'Admin: create user' },
+  { value: 'ADMIN_VERIFY', label: 'Admin: verify user' },
+  { value: 'ADMIN_UNVERIFY', label: 'Admin: unverify user' },
+  { value: 'ADMIN_DEACTIVATE', label: 'Admin: deactivate user' },
+  { value: 'ADMIN_ACTIVATE', label: 'Admin: activate user' },
+  { value: 'ADMIN_UPDATE', label: 'Admin: update user' },
+  // Tree content
   { value: 'CREATE_PERSON', label: 'Create person' },
   { value: 'UPDATE_PERSON', label: 'Update person' },
   { value: 'DELETE_PERSON', label: 'Delete person' },
@@ -66,12 +76,23 @@ const ENTITY_OPTIONS = [
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+const ADMIN_ACTION_LABELS: Record<string, string> = {
+  ADMIN_CREATE:     'Created user',
+  ADMIN_VERIFY:     'Verified user',
+  ADMIN_UNVERIFY:   'Unverified user',
+  ADMIN_DEACTIVATE: 'Deactivated user',
+  ADMIN_ACTIVATE:   'Activated user',
+  ADMIN_UPDATE:     'Updated user',
+};
+
 function actionBadge(action: string): string {
   if (action === 'LOGIN') return 'bg-green-100 text-green-800';
+  if (action === 'LOGOUT') return 'bg-gray-100 text-gray-700';
   if (action === 'FAILED_LOGIN') return 'bg-red-100 text-red-800';
+  if (action.startsWith('ADMIN_')) return 'bg-purple-100 text-purple-800';
   if (action.startsWith('CREATE') || action.startsWith('ADD') || action.startsWith('UPLOAD') || action.startsWith('INVITE'))
     return 'bg-blue-100 text-blue-800';
-  if (action.startsWith('DELETE') || action.startsWith('REMOVE'))
+  if (action.startsWith('DELETE') || action.startsWith('REMOVE') || action === 'ADMIN_DEACTIVATE')
     return 'bg-red-100 text-red-800';
   if (action.startsWith('UPDATE') || action.startsWith('CHANGE'))
     return 'bg-amber-100 text-amber-800';
@@ -79,6 +100,7 @@ function actionBadge(action: string): string {
 }
 
 function formatAction(action: string): string {
+  if (ADMIN_ACTION_LABELS[action]) return ADMIN_ACTION_LABELS[action];
   return action.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 }
 

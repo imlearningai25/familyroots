@@ -60,14 +60,17 @@ class AuthService:
 
     # ── Register ──────────────────────────────────────────────────
 
-    async def register(self, req: RegisterRequest) -> tuple[TokenResponse, str]:
+    async def register(self, req: RegisterRequest) -> None:
+        from src.config import get_settings
+        tenant_slug = get_settings().default_tenant_slug
         async with self._uow:
-            # 1. Create or fetch tenant
-            tenant = await self._uow.tenants.get_by_slug(req.tenant_slug)
+            # 1. Create or fetch the single shared tenant
+            tenant = await self._uow.tenants.get_by_slug(tenant_slug)
+            is_new_tenant = tenant is None
             if tenant is None:
                 tenant = TenantModel(
-                    name=req.tenant_slug.replace("-", " ").title(),
-                    slug=req.tenant_slug,
+                    name=tenant_slug.replace("-", " ").title(),
+                    slug=tenant_slug,
                     is_active=True,
                 )
                 tenant = await self._uow.tenants.add(tenant)
@@ -78,7 +81,7 @@ class AuthService:
                     resource="user", field="email", value=req.email
                 )
 
-            # 3. Create user
+            # 3. Create user — first user in a new tenant becomes ADMIN automatically
             verification_token = secrets.token_hex(32)
             user = UserModel(
                 tenant_id=tenant.id,
@@ -87,13 +90,14 @@ class AuthService:
                 given_name=req.given_name,
                 family_name=req.family_name,
                 email_verification_token=verification_token,
+                app_role="ADMIN" if is_new_tenant else "STANDARD",
             )
             user = await self._uow.users.add(user)
 
         log.info("user.registered", user_id=str(user.id), tenant_id=str(tenant.id))
 
-        # TODO: emit UserRegisteredEvent → send verification email via Celery
-        return await self._issue_tokens(user)
+        # Send verification email — user must verify before they can log in
+        await self._send_verification_email(user.email, user.full_name, verification_token)
 
     # ── Login ─────────────────────────────────────────────────────
 
@@ -161,14 +165,29 @@ class AuthService:
 
     # ── Logout ────────────────────────────────────────────────────
 
-    async def logout(self, refresh_token: str) -> None:
+    async def logout(self, refresh_token: str, ip_address: str | None = None) -> None:
         try:
             payload = self._jwt.decode_refresh_token(refresh_token)
             jti = self._jwt.extract_jti(payload)
+            user_id = self._jwt.extract_user_id(payload)
+            tenant_id = self._jwt.extract_tenant_id(payload)
             await self._tokens.revoke(jti)
+
+            # Record logout in login_events
+            async with self._uow:
+                user = await self._find_user_by_email_by_id(user_id, tenant_id)
+                if user:
+                    await self._record_login_event(
+                        user_id=user.id,
+                        tenant_id=user.tenant_id,
+                        display_name=user.full_name,
+                        email=user.email,
+                        success=True,
+                        ip_address=ip_address,
+                        event_type="LOGOUT",
+                    )
         except (TokenExpiredError, TokenInvalidError):
-            # Token already invalid — logout is idempotent
-            pass
+            pass  # Token already invalid — logout is idempotent
 
     async def logout_all(self, user_id: uuid.UUID) -> None:
         """Revoke all refresh tokens for a user (logout from all devices)."""
@@ -189,23 +208,36 @@ class AuthService:
 
         log.info("user.email_verified", user_id=str(user.id))
 
+    async def resend_verification(self, email: str) -> None:
+        """Re-send the verification email. Silent no-op if already verified or unknown."""
+        async with self._uow:
+            user = await self._find_user_by_email(email, raise_if_missing=False)
+            if user is None or user.email_verified:
+                return
+
+            token = secrets.token_hex(32)
+            user.email_verification_token = token
+            await self._uow.users.update(user)
+
+        await self._send_verification_email(user.email, user.full_name, token)
+
     # ── Password reset ────────────────────────────────────────────
 
     async def forgot_password(self, email: str) -> None:
-        """
-        Generate a reset token. Always returns 204 to avoid email enumeration.
-        Caller should emit an email via Celery.
-        """
         async with self._uow:
             user = await self._find_user_by_email(email, raise_if_missing=False)
             if user is None:
-                return  # silent no-op
+                return  # silent no-op — avoid email enumeration
 
-            user.password_reset_token = secrets.token_hex(32)
+            if not user.email_verified:
+                raise AccountNotVerifiedError()
+
+            reset_token = secrets.token_hex(32)
+            user.password_reset_token = reset_token
             user.password_reset_expires_at = datetime.now(tz=timezone.utc) + _TOKEN_EXPIRE
             await self._uow.users.update(user)
 
-        # TODO: emit PasswordResetRequestedEvent → Celery sends email
+        await self._send_password_reset_email(user.email, user.full_name, reset_token)
 
     async def reset_password(self, token: str, new_password: str) -> None:
         async with self._uow:
@@ -221,6 +253,11 @@ class AuthService:
             user.password_reset_expires_at = None
             user.failed_login_attempts = 0
             user.locked_until = None
+            # Using the reset link proves ownership of the email address
+            if not user.email_verified:
+                user.email_verified = True
+                user.email_verified_at = datetime.now(tz=timezone.utc)
+                user.email_verification_token = None
             await self._uow.users.update(user)
 
         # Revoke all refresh tokens so attacker can't reuse old sessions
@@ -279,6 +316,55 @@ class AuthService:
         )
         return token_response, refresh_token_str
 
+    async def _send_verification_email(
+        self,
+        email: str,
+        display_name: str,
+        token: str,
+    ) -> None:
+        from src.config import get_settings
+        from src.infrastructure.email.service import send_email, verification_email
+        settings = get_settings()
+        verify_url = f"{settings.frontend_base_url}/verify-email?token={token}"
+        html, text = verification_email(display_name, verify_url)
+        await send_email(
+            to=email,
+            subject="Verify your FamilyRoots email address",
+            html_body=html,
+            text_body=text,
+        )
+
+    async def _send_password_reset_email(
+        self,
+        email: str,
+        display_name: str,
+        token: str,
+    ) -> None:
+        from src.config import get_settings
+        from src.infrastructure.email.service import send_email, password_reset_email
+        settings = get_settings()
+        reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
+        html, text = password_reset_email(display_name, reset_url)
+        await send_email(
+            to=email,
+            subject="Reset your FamilyRoots password",
+            html_body=html,
+            text_body=text,
+        )
+
+    async def _find_user_by_email_by_id(
+        self,
+        user_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+    ) -> "UserModel | None":
+        from sqlalchemy import select
+        from src.infrastructure.database.models.user import UserModel as _U
+        session = self._uow._session  # type: ignore[attr-defined]
+        result = await session.execute(
+            select(_U).where(_U.id == user_id, _U.tenant_id == tenant_id).limit(1)
+        )
+        return result.scalars().first()
+
     async def _record_login_event(
         self,
         user_id: uuid.UUID,
@@ -287,6 +373,7 @@ class AuthService:
         email: str,
         success: bool,
         ip_address: str | None,
+        event_type: str = "LOGIN",
     ) -> None:
         from src.infrastructure.database.models.login_event import LoginEventModel
         session = self._uow._session  # type: ignore[attr-defined]
@@ -295,6 +382,7 @@ class AuthService:
             user_id=user_id,
             user_display_name=display_name,
             user_email=email,
+            event_type=event_type,
             success=success,
             ip_address=ip_address,
         )

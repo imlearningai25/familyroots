@@ -12,6 +12,7 @@ from src.api.deps import (
     TokenStoreDep,
     UoWDep,
 )
+
 from src.application.auth.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -47,19 +48,16 @@ def _set_refresh_cookie(response: Response, token: str, secure: bool = False) ->
 
 @router.post(
     "/register",
-    response_model=TokenResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Register a new user and tenant",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Register a new user — verification email is sent; no session is created",
 )
 async def register(
     req: RegisterRequest,
-    response: Response,
-    settings: SettingsDep,
     svc: AuthService = Depends(_get_auth_service),
-) -> TokenResponse:
-    token_resp, refresh_token = await svc.register(req)
-    _set_refresh_cookie(response, refresh_token, secure=settings.is_production)
-    return token_resp
+) -> None:
+    await svc.register(req)
 
 
 @router.post(
@@ -106,12 +104,14 @@ async def refresh(
     summary="Revoke the current refresh token",
 )
 async def logout(
+    request: Request,
     response: Response,
     refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
     svc: AuthService = Depends(_get_auth_service),
 ) -> None:
     if refresh_token:
-        await svc.logout(refresh_token)
+        ip = request.client.host if request.client else None
+        await svc.logout(refresh_token, ip_address=ip)
     response.delete_cookie(
         key=_REFRESH_COOKIE,
         path="/api/v1/auth",
@@ -132,6 +132,20 @@ async def verify_email(
     svc: AuthService = Depends(_get_auth_service),
 ) -> None:
     await svc.verify_email(req.token)
+
+
+@router.post(
+    "/resend-verification",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Resend the email verification link",
+)
+async def resend_verification(
+    req: ForgotPasswordRequest,
+    svc: AuthService = Depends(_get_auth_service),
+) -> None:
+    await svc.resend_verification(req.email)
 
 
 @router.post(
