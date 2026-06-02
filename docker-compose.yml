@@ -5,27 +5,27 @@ name: familyroots-dev
 
 x-backend-env: &backend-env
     PYTHONPATH: /app
-    DATABASE_URL:
-    SYNC_DATABASE_URL:
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-familyroots}
+    SYNC_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-familyroots}
     REDIS_URL: redis://redis:6379/0
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
-    JWT_SECRET: dev-secret-change-in-production
+    JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
     ENVIRONMENT: development
     S3_BUCKET: familyroots-local
     S3_REGION: us-east-1
     S3_ENDPOINT_URL: http://minio:9000
     S3_PUBLIC_URL: http://localhost:7002
-    AWS_ACCESS_KEY_ID: minioadmin
-    AWS_SECRET_ACCESS_KEY: minioadmin
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
     CORS_ORIGINS: '["http://localhost:7006","http://localhost:7009"]'
     LOG_LEVEL: DEBUG
-    SMTP_HOST:
-    SMTP_PORT: '587'
-    SMTP_USER:
-    SMTP_PASSWORD:
-    EMAIL_FROM:
-    DEFAULT_TENANT_SLUG:
+    SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_USER: ${SMTP_USER:?SMTP_USER must be set in .env}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD must be set in .env}
+    EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM must be set in .env}
+    DEFAULT_TENANT_SLUG: familyroots-system
     FRONTEND_BASE_URL: http://localhost:7006
 
 services:
@@ -34,16 +34,16 @@ services:
         image: postgres:15-alpine
         restart: unless-stopped
         environment:
-            POSTGRES_DB: familyroots
-            POSTGRES_USER: postgres
-            POSTGRES_PASSWORD: postgres
+            POSTGRES_DB: ${POSTGRES_DB:-familyroots}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
         ports:
             - '7000:5432'
         volumes:
             - postgres_data:/var/lib/postgresql/data
             - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U postgres']
+            test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER']
             interval: 5s
             timeout: 3s
             retries: 10
@@ -69,8 +69,8 @@ services:
         restart: unless-stopped
         command: server /data --console-address ":9001"
         environment:
-            MINIO_ROOT_USER: minioadmin
-            MINIO_ROOT_PASSWORD: minioadmin
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
         ports:
             - '7002:9000' # S3 API
             - '7003:9001' # Console
@@ -88,9 +88,12 @@ services:
         depends_on:
             minio:
                 condition: service_healthy
+        environment:
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
         entrypoint: >
             /bin/sh -c "
-              mc alias set local http://minio:9000 minioadmin minioadmin;
+              mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
               mc mb --ignore-existing local/familyroots-local;
               mc anonymous set download local/familyroots-local;
             "
