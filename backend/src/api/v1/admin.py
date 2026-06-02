@@ -392,6 +392,33 @@ async def _send_admin_verified_email(email: str, display_name: str) -> None:
         pass
 
 
+@router.get(
+    "/trees/{tree_id}/persons",
+    summary="List persons in a tree (for admin merge picker)",
+)
+async def list_tree_persons_admin(
+    tree_id: uuid.UUID,
+    current_user: AdminUserDep,
+    session: SessionDep,
+) -> list[dict]:
+    from sqlalchemy import text
+    rows = (await session.execute(text("""
+        SELECT id, display_given_name, display_surname, photo_url
+        FROM persons
+        WHERE tree_id = :tid AND tenant_id = :tenant AND is_deleted = false
+        ORDER BY display_surname, display_given_name
+    """), {"tid": tree_id, "tenant": current_user.tenant_id})).fetchall()
+    return [
+        {
+            "id": str(r.id),
+            "display_given_name": r.display_given_name or "",
+            "display_surname": r.display_surname or "",
+            "photo_url": r.photo_url,
+        }
+        for r in rows
+    ]
+
+
 async def _send_admin_unverified_email(email: str, display_name: str) -> None:
     try:
         from src.infrastructure.email.service import account_unverified_by_admin_email, send_email

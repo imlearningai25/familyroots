@@ -61,6 +61,7 @@ class Action(str, Enum):
     # Tree backup
     EXPORT_TREE         = "EXPORT_TREE"
     IMPORT_TREE         = "IMPORT_TREE"
+    MERGE_TREES         = "MERGE_TREES"
     # Photo
     UPDATE_PHOTO        = "UPDATE_PHOTO"
 
