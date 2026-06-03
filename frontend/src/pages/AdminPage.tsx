@@ -314,12 +314,270 @@ function EditUserModal({
   );
 }
 
+// ── Merge Trees panel ─────────────────────────────────────────────────────────
+
+interface MergePersonOption { id: string; display_given_name: string; display_surname: string; photo_url: string | null; }
+
+function MergeTreesPanel({ token }: { token: string | null }) {
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+
+  // All trees in tenant
+  const [allTrees, setAllTrees] = useState<TenantTree[]>([]);
+  const [loadingTrees, setLoadingTrees] = useState(true);
+
+  // Wizard state
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [selectedTreeIds, setSelectedTreeIds] = useState<string[]>([]);
+
+  // Per-tree person lists
+  const [persons, setPersons] = useState<Record<string, MergePersonOption[]>>({});
+  const [loadingPersons, setLoadingPersons] = useState<Record<string, boolean>>({});
+
+  // Pivot selections: tree_id → person_id
+  const [pivots, setPivots] = useState<Record<string, string>>({});
+
+  // Submit state
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState('');
+  const [result, setResult] = useState<{ tree_id: string; tree_name: string; person_count: number } | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/admin/trees`, { headers: authHeader, credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAllTrees(data))
+      .finally(() => setLoadingTrees(false));
+  }, []);
+
+  function toggleTree(id: string) {
+    setSelectedTreeIds(prev =>
+      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+    );
+    setPivots(prev => { const n = { ...prev }; delete n[id]; return n; });
+  }
+
+  async function goToStep2() {
+    if (!newName.trim() || selectedTreeIds.length < 2) return;
+    setStep(2);
+    const missing = selectedTreeIds.filter(tid => !persons[tid]);
+    setLoadingPersons(prev => Object.fromEntries(missing.map(tid => [tid, true])));
+    await Promise.all(missing.map(async (tid) => {
+      try {
+        const r = await fetch(`${API_BASE}/admin/trees/${tid}/persons`, { headers: authHeader, credentials: 'include' });
+        const data = r.ok ? await r.json() : [];
+        setPersons(prev => ({ ...prev, [tid]: data }));
+      } finally {
+        setLoadingPersons(prev => ({ ...prev, [tid]: false }));
+      }
+    }));
+  }
+
+  async function handleMerge() {
+    setMerging(true);
+    setMergeError('');
+    try {
+      const sources = selectedTreeIds.map(tid => ({ tree_id: tid, pivot_person_id: pivots[tid] }));
+      const res = await fetch(`${API_BASE}/trees/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        credentials: 'include',
+        body: JSON.stringify({ new_tree_name: newName.trim(), new_tree_description: newDesc.trim() || null, sources }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).detail ?? 'Merge failed');
+      }
+      setResult(await res.json());
+      setStep(3);
+    } catch (e) {
+      setMergeError((e as Error).message);
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  function reset() {
+    setStep(1); setNewName(''); setNewDesc(''); setSelectedTreeIds([]);
+    setPersons({}); setPivots({}); setMergeError(''); setResult(null);
+  }
+
+  const allPivotsSelected = selectedTreeIds.length >= 2 && selectedTreeIds.every(tid => !!pivots[tid]);
+
+  if (loadingTrees) return (
+    <div className="flex justify-center py-16">
+      <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (step === 3 && result) return (
+    <div className="max-w-lg mx-auto py-12 text-center">
+      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+      <h2 className="text-lg font-semibold text-gray-900 mb-1">Trees merged successfully</h2>
+      <p className="text-sm text-gray-500 mb-1">
+        <span className="font-medium text-gray-700">{result.tree_name}</span> was created with {result.person_count} people.
+      </p>
+      <div className="mt-6 flex gap-3 justify-center">
+        <a
+          href={`/trees/${result.tree_id}`}
+          className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 transition-colors"
+        >
+          Open merged tree
+        </a>
+        <button onClick={reset} className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+          Merge another
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="max-w-2xl">
+      {/* Step indicator */}
+      <div className="flex items-center gap-2 mb-6 text-sm">
+        {(['1. Name & select trees', '2. Choose pivot people', '3. Done'] as const).map((label, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span className="text-gray-300">›</span>}
+            <span className={step === i + 1 ? 'text-brand-600 font-medium' : 'text-gray-400'}>{label}</span>
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Step 1 */}
+      {step === 1 && (
+        <div className="space-y-5">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              New tree name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="e.g. Combined Family Tree"
+              className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
+            <textarea
+              value={newDesc}
+              onChange={e => setNewDesc(e.target.value)}
+              rows={2}
+              placeholder="Describe the merged tree…"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2">
+              Select trees to merge <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-1">(minimum 2)</span>
+            </p>
+            {allTrees.length === 0 ? (
+              <p className="text-sm text-gray-400">No trees found.</p>
+            ) : (
+              <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                {allTrees.map(tree => (
+                  <label key={tree.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTreeIds.includes(tree.id)}
+                      onChange={() => toggleTree(tree.id)}
+                      className="rounded border-gray-300 text-brand-500"
+                    />
+                    <span className="text-sm text-gray-800">{tree.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={goToStep2}
+            disabled={!newName.trim() || selectedTreeIds.length < 2}
+            className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Next: choose pivot people
+          </button>
+        </div>
+      )}
+
+      {/* Step 2 */}
+      {step === 2 && (
+        <div className="space-y-5">
+          <p className="text-sm text-gray-600">
+            For each tree, select the <span className="font-medium">same real person</span> who connects the trees.
+            All pivot people will be merged into one person in the new tree.
+          </p>
+
+          {selectedTreeIds.map(tid => {
+            const tree = allTrees.find(t => t.id === tid);
+            const pList = persons[tid] ?? [];
+            const loading = loadingPersons[tid];
+            return (
+              <div key={tid} className="border border-gray-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-800 mb-2">{tree?.name ?? tid}</p>
+                {loading ? (
+                  <div className="flex justify-center py-3">
+                    <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : pList.length === 0 ? (
+                  <p className="text-xs text-gray-400">No people in this tree.</p>
+                ) : (
+                  <select
+                    value={pivots[tid] ?? ''}
+                    onChange={e => setPivots(prev => ({ ...prev, [tid]: e.target.value }))}
+                    className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="">— select pivot person —</option>
+                    {pList.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {[p.display_given_name, p.display_surname].filter(Boolean).join(' ') || '(unnamed)'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            );
+          })}
+
+          {mergeError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError}</p>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setStep(1)}
+              className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleMerge}
+              disabled={!allPivotsSelected || merging}
+              className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              {merging && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />}
+              {merging ? 'Merging…' : 'Create merged tree'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const accessToken  = useAuthStore((s) => s.accessToken);
   const currentUser  = useAuthStore((s) => s.user);
-  const [activeTab, setActiveTab] = useState<'users' | 'permissions'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'permissions' | 'merge'>('users');
 
   const [data,     setData]     = useState<UsersResponse | null>(null);
   const [loading,  setLoading]  = useState(false);
@@ -416,7 +674,7 @@ export default function AdminPage() {
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {([['users', 'Users'], ['permissions', 'Permission Groups']] as const).map(([key, label]) => (
+        {([['users', 'Users'], ['permissions', 'Permission Groups'], ['merge', 'Merge Trees']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -432,6 +690,7 @@ export default function AdminPage() {
       </div>
 
       {activeTab === 'permissions' && <PermissionGroupsPanel token={accessToken} />}
+      {activeTab === 'merge' && <MergeTreesPanel token={accessToken} />}
       {activeTab === 'users' && (<>
 
       {/* Users tab header actions */}
