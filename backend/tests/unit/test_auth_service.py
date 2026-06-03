@@ -61,7 +61,7 @@ class TestRegister:
 class TestLogin:
     async def test_successful_login(self, auth_service: AuthService) -> None:
         req = LoginRequest(email="alice@example.com", password="Password1")
-        resp = await auth_service.login(req)
+        resp, _refresh = await auth_service.login(req)
 
         assert resp.access_token
         assert resp.user_id == TEST_USER_ID
