@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -52,6 +53,13 @@ export default function RegisterPage() {
   }
 
   return (
+    <>
+      <SEO
+        title="Create Account"
+        description="Create your free FamilyRoots account and start building your family tree today. Connect ancestors, add photos, and share your genealogy with family."
+        canonical="/register"
+        keywords="register, create account, free genealogy, family tree signup, genealogy account"
+      />
     <div className="min-h-screen flex items-center justify-center bg-surface-muted px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
@@ -174,5 +182,6 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+    </>
   );
 }

@@ -4,6 +4,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '@store/auth.store';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 const PAGE_SIZE = 25;
@@ -665,9 +666,14 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <SEO
+        title="Admin Dashboard"
+        description="Manage users, roles, and permission groups for your FamilyRoots organisation."
+        noIndex
+      />
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-4 md:mb-6">
         <h1 className="text-xl font-bold text-gray-900">Admin Dashboard</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage users, roles, and permission groups</p>
       </div>

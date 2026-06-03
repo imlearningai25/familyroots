@@ -1,9 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 
 export default function NotFoundPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-muted">
+      <SEO title="Page Not Found" noIndex />
       <div className="text-center">
         <p className="text-6xl font-bold text-brand-500 mb-4">404</p>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Page not found</h1>

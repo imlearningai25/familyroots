@@ -2,13 +2,19 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 
-// Extra hostnames Vite's dev server should accept.
-// Set VITE_ALLOWED_HOSTS to a comma-separated list in .env (or via docker-compose).
-// Example:  VITE_ALLOWED_HOSTS=familyroots.aipioneerlab.com,staging.example.com
-// When the variable is absent, Vite falls back to its default (localhost only).
-const allowedHosts = process.env.VITE_ALLOWED_HOSTS
-  ? process.env.VITE_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
-  : undefined;
+// Minimal Node.js process typing — avoids requiring @types/node.
+declare const process: { env: Record<string, string | undefined> };
+
+// Which hostnames the Vite dev server accepts.
+//   VITE_ALLOWED_HOSTS=all                           → allow every host (good behind a tunnel)
+//   VITE_ALLOWED_HOSTS=familyroots.aipioneerlab.com  → allow that specific host
+//   VITE_ALLOWED_HOSTS=a.com,b.com                   → allow multiple hosts
+//   unset / empty                                    → Vite default (localhost only)
+const _hosts = process.env.VITE_ALLOWED_HOSTS?.trim();
+const allowedHosts: true | string[] | undefined =
+  _hosts === 'all' ? true
+  : _hosts         ? _hosts.split(',').map((h: string) => h.trim()).filter(Boolean)
+  :                  undefined;
 
 export default defineConfig({
   plugins: [react()],

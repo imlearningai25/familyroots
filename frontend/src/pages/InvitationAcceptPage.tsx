@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@store/auth.store';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -82,6 +83,11 @@ export default function InvitationAcceptPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-muted px-4">
+      <SEO
+        title="Accept Invitation"
+        description="Accept your invitation to collaborate on a FamilyRoots family tree."
+        noIndex
+      />
       <div className="w-full max-w-sm text-center">
         <div className="text-4xl mb-4">🌳</div>
         <h1 className="text-xl font-bold text-slate-900 mb-2">FamilyRoots</h1>

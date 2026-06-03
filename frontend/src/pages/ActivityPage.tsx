@@ -5,6 +5,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '@store/auth.store';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 const PAGE_SIZE = 25;
@@ -204,9 +205,14 @@ export default function ActivityPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <SEO
+        title="Activity Log"
+        description="View all actions and login events across your organisation's family trees."
+        noIndex
+      />
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Activity Log</h1>
           <p className="text-sm text-gray-500 mt-0.5">

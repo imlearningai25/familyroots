@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '@api/client';
 import { SearchResultList } from '@features/search/components/SearchResultList';
@@ -49,8 +50,13 @@ export default function SearchPage() {
   );
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Search</h1>
+    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+      <SEO
+        title="Search"
+        description="Search across family members, trees, and relationships in FamilyRoots."
+        noIndex
+      />
+      <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">Search</h1>
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
@@ -77,7 +83,7 @@ export default function SearchPage() {
       {/* Members tab */}
       {tab === 'members' && (
         <>
-          <div className="flex gap-3 mb-6">
+          <div className="flex flex-col sm:flex-row gap-2 mb-4 md:mb-6">
             <div className="relative flex-1">
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
               <input
@@ -97,7 +103,7 @@ export default function SearchPage() {
               onChange={(e) => setSelectedTreeId(e.target.value)}
               className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm
                          text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1
-                         focus:ring-indigo-500 min-w-[180px]"
+                         focus:ring-indigo-500 sm:min-w-[160px]"
             >
               <option value="">All trees</option>
               {trees?.map((t) => (

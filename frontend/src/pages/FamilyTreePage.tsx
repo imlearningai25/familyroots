@@ -6,6 +6,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 import { useQuery } from '@tanstack/react-query';
 import { TreeCanvas, type TreeCanvasHandle } from '@features/tree/canvas/TreeCanvas';
 import { useThemeStore, THEME_PRESETS, PRESET_LABEL, type CanvasTheme } from '@store/theme.store';
@@ -1251,11 +1252,13 @@ function TreeTopBar({
   onShowActivity: () => void;
 }) {
   const [exportOpen,    setExportOpen]    = React.useState(false);
+  const [moreOpen,      setMoreOpen]      = React.useState(false);
   const [exportingPdf,  setExportingPdf]  = React.useState(false);
   const [exportingZip,  setExportingZip]  = React.useState(false);
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
+  const moreMenuRef   = React.useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
+  // Close export dropdown when clicking outside
   React.useEffect(() => {
     if (!exportOpen) return;
     function onMouseDown(e: MouseEvent) {
@@ -1266,6 +1269,18 @@ function TreeTopBar({
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [exportOpen]);
+
+  // Close mobile "more" menu when clicking outside
+  React.useEffect(() => {
+    if (!moreOpen) return;
+    function onMouseDown(e: MouseEvent) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [moreOpen]);
 
   async function handleExportPdf() {
     if (exportingPdf) return;
@@ -1350,18 +1365,18 @@ function TreeTopBar({
   const anyExporting = exportingPdf || exportingZip;
 
   return (
-    <div className="absolute top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center px-4 gap-3 z-30">
-      <Link to="/dashboard" className="text-slate-400 hover:text-slate-600 transition-colors text-sm">
-        ← Dashboard
+    <div className="absolute top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center px-3 md:px-4 gap-2 md:gap-3 z-30">
+      <Link to="/dashboard" className="text-slate-400 hover:text-slate-600 transition-colors text-sm shrink-0">
+        ← <span className="hidden sm:inline">Dashboard</span>
       </Link>
-      <div className="w-px h-5 bg-slate-200" />
-      <span className="font-semibold text-slate-800 text-sm truncate">{treeName}</span>
-      <span className="text-xs text-slate-400">{personCount} people</span>
+      <div className="w-px h-5 bg-slate-200 shrink-0" />
+      <span className="font-semibold text-slate-800 text-sm truncate min-w-0">{treeName}</span>
+      <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">{personCount} people</span>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1.5 md:gap-2">
 
-        {/* ── Export dropdown ── */}
-        <div className="relative" ref={exportMenuRef}>
+        {/* ── Export dropdown (hidden on mobile, shown md+) ── */}
+        <div className="relative hidden md:block" ref={exportMenuRef}>
           <button
             onClick={() => setExportOpen((o) => !o)}
             disabled={!graph || anyExporting}
@@ -1450,34 +1465,77 @@ function TreeTopBar({
           )}
         </div>
 
-        <div className="w-px h-4 bg-slate-200" />
+        <div className="w-px h-4 bg-slate-200 hidden md:block" />
 
         <button
           onClick={onLayouts}
           title="Save or load a named layout"
-          className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+          className="hidden md:inline-flex px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
         >
           Layouts
         </button>
         <button
           onClick={onTheme}
           title="Customize tree canvas appearance"
-          className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+          className="hidden md:inline-flex px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
         >
           🎨 Theme
         </button>
         <button
           onClick={onMembers}
-          className="px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+          className="hidden md:inline-flex px-3 py-1.5 text-xs font-medium text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
         >
           Members
         </button>
+
+        {/* ── Mobile "⋮" overflow menu ── */}
+        <div className="relative md:hidden" ref={moreMenuRef}>
+          <button
+            onClick={() => setMoreOpen((o) => !o)}
+            className="p-2 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+            aria-label="More options"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="8" cy="3" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="8" cy="13" r="1.4"/>
+            </svg>
+          </button>
+          {moreOpen && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-slate-200 shadow-lg z-50 overflow-hidden">
+              <div className="py-1">
+                <button onClick={() => { setMoreOpen(false); onLayouts(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                  Layouts
+                </button>
+                <button onClick={() => { setMoreOpen(false); onTheme(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                  🎨 Theme
+                </button>
+                <button onClick={() => { setMoreOpen(false); onMembers(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                  Members
+                </button>
+                <div className="border-t border-slate-100 my-1" />
+                <button onClick={() => { setMoreOpen(false); onExportCsv(); }}
+                  disabled={!graph}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                  Export CSV
+                </button>
+                <button onClick={async () => { setMoreOpen(false); await onExportPdf(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                  Export PDF
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {canWrite && (
           <button
             onClick={onAddPerson}
-            className="px-3 py-1.5 bg-brand-500 text-white text-xs font-medium rounded-lg hover:bg-brand-600 transition-colors"
+            className="px-2.5 md:px-3 py-1.5 bg-brand-500 text-white text-xs font-medium rounded-lg hover:bg-brand-600 transition-colors"
           >
-            + Add person
+            <span className="hidden sm:inline">+ Add person</span>
+            <span className="sm:hidden">+</span>
           </button>
         )}
       </div>
@@ -1655,10 +1713,16 @@ export default function FamilyTreePage() {
   const treeName        = (graph as any)?.treeName ?? 'Family Tree';
   const treeDescription = (graph as any)?.treeDescription ?? null;
   const personCount     = graph?.persons.length ?? 0;
+
   const canWrite        = (graph as any)?.userRole !== 'VIEWER';
 
   return (
     <div className="fixed inset-0 flex flex-col">
+      <SEO
+        title={treeName}
+        description={treeDescription ?? `Explore the ${treeName} family tree — ${personCount} people across multiple generations.`}
+        noIndex
+      />
       <TreeTopBar
         treeName={treeName}
         treeDescription={treeDescription}
@@ -1695,7 +1759,7 @@ export default function FamilyTreePage() {
             return !query || name.includes(query);
           }).slice(0, 10);
           return (
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-80">
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-[calc(100vw-2rem)] max-w-xs sm:max-w-sm">
               <div className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
                   <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2056,7 +2120,7 @@ function CanvasThemeModal({ onClose }: { onClose: () => void }) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-80 max-h-[calc(100vh-5rem)] flex flex-col border border-slate-200 mt-14"
+        className="bg-white rounded-2xl shadow-2xl w-[calc(100vw-2rem)] max-w-xs sm:w-80 max-h-[calc(100vh-5rem)] flex flex-col border border-slate-200 mt-14"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">

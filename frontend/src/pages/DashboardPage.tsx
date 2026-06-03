@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@store/auth.store';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -107,16 +108,16 @@ function TreeCard({ tree, onEdit, onDelete, onShare }: TreeCardProps) {
 
       {/* Actions menu — OWNER or ADMIN */}
       {canEdit && (
-        <div className="absolute top-3 right-3" ref={menuRef}>
+        <div className="absolute bottom-3 right-3" ref={menuRef}>
           <button
             onClick={(e) => { e.preventDefault(); setMenuOpen((v) => !v); }}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
             title="Tree options"
           >
             ⋯
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-8 z-20 w-44 bg-white rounded-xl border border-gray-200 shadow-lg py-1">
+            <div className="absolute right-0 bottom-full mb-1 z-20 w-44 bg-white rounded-xl border border-gray-200 shadow-lg py-1">
               <button
                 onClick={(e) => { e.preventDefault(); setMenuOpen(false); onShare(tree); }}
                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -155,6 +156,11 @@ export default function DashboardPage() {
   const [trees,   setTrees]   = useState<TreeSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
+  const [page,    setPage]    = useState(1);
+
+  const PAGE_SIZE   = 9;
+  const totalPages  = Math.ceil(trees.length / PAGE_SIZE);
+  const visibleTrees = trees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Import .frt
   const importInputRef             = useRef<HTMLInputElement>(null);
@@ -281,7 +287,7 @@ export default function DashboardPage() {
         if (!r.ok) throw new Error('Failed to load trees');
         return r.json();
       })
-      .then(setTrees)
+      .then((data) => { setTrees(data); setPage(1); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [accessToken]);
@@ -311,6 +317,7 @@ export default function DashboardPage() {
       }
       const tree: TreeSummary = await res.json();
       setTrees((prev) => [tree, ...prev]);
+      setPage(1);
       setModalOpen(false);
     } catch (err: any) {
       setCreateError(err.message);
@@ -343,17 +350,22 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <SEO
+        title="Dashboard"
+        description="Manage your family trees, collaborate with members, and explore your ancestry on FamilyRoots."
+        noIndex
+      />
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 md:mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
             Welcome back{user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
           </h1>
           <p className="text-sm text-gray-500 mt-1">Your family trees</p>
         </div>
-        <div className="flex items-center gap-2">
-          {importError && <p className="text-xs text-red-600">{importError}</p>}
+        <div className="flex items-center gap-2 flex-wrap">
+          {importError && <p className="text-xs text-red-600 w-full">{importError}</p>}
           <input
             ref={importInputRef}
             type="file"
@@ -365,12 +377,12 @@ export default function DashboardPage() {
             onClick={() => { setImportError(''); importInputRef.current?.click(); }}
             disabled={importing}
             title="Import a .frt backup or a .zip with photos"
-            className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            className="px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
-            {importing ? 'Importing…' : '↑ Import .frt / .zip'}
+            {importing ? 'Importing…' : '↑ Import'}
           </button>
           <button
-            className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 transition-colors"
+            className="px-3 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 transition-colors"
             onClick={openModal}
           >
             + New tree
@@ -399,10 +411,49 @@ export default function DashboardPage() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {trees.map((tree) => (
+        {visibleTrees.map((tree) => (
           <TreeCard key={tree.id} tree={tree} onEdit={openEdit} onDelete={setDeleteTarget} onShare={setShareTarget} />
         ))}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-100">
+          <p className="text-sm text-gray-500">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, trees.length)} of {trees.length} trees
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => p - 1)}
+              disabled={page === 1}
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Prev
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                className={[
+                  'w-8 h-8 text-sm font-medium rounded-lg transition-colors',
+                  p === page
+                    ? 'bg-brand-500 text-white'
+                    : 'text-gray-600 hover:bg-gray-100',
+                ].join(' ')}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page === totalPages}
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create tree modal */}
       {modalOpen && (
@@ -410,7 +461,7 @@ export default function DashboardPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setModalOpen(false); }}
         >
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4 md:p-6 mx-4 md:mx-0">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">New family tree</h2>
             <form onSubmit={handleCreateTree} className="space-y-4">
               <div>
@@ -682,7 +733,7 @@ function ShareTreeModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-4 md:p-6 max-h-[90vh] md:max-h-[85vh] flex flex-col mx-4 md:mx-0">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>

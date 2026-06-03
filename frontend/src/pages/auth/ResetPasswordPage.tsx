@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -97,6 +98,12 @@ export default function ResetPasswordPage() {
   }
 
   return (
+    <>
+      <SEO
+        title="Reset Password"
+        description="Create a new secure password for your FamilyRoots account."
+        noIndex
+      />
     <div className="min-h-screen flex items-center justify-center bg-surface-muted px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
@@ -181,5 +188,6 @@ export default function ResetPasswordPage() {
         </p>
       </div>
     </div>
+    </>
   );
 }

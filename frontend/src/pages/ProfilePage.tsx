@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@store/auth.store';
 import { queryKeys } from '@queries/keys';
@@ -169,7 +170,13 @@ export default function ProfilePage() {
     person.children.length + person.siblings.length > 0;
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto">
+      <SEO
+        title={fullName}
+        description={`View ${fullName}'s profile — family connections, relatives, and biographical details on FamilyRoots.`}
+        ogType="profile"
+        noIndex
+      />
       {/* Back */}
       <Link
         to={backTo}
@@ -179,7 +186,7 @@ export default function ProfilePage() {
       </Link>
 
       {/* Header card */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-5 flex items-start gap-5">
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 mb-4 md:mb-5 flex flex-col sm:flex-row sm:items-start gap-4">
         {person.photo_url ? (
           <img
             src={isPreset(person.photo_url) ? presetDataUri(person.photo_url)! : person.photo_url}
