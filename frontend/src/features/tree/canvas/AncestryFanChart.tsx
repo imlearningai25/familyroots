@@ -9,7 +9,8 @@
  * who has at least one ancestor in the graph.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ApiTreeGraph } from '../types';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -38,8 +39,6 @@ const f = (n: number) => n.toFixed(2);
 /**
  * SVG path for an annular wedge.
  * a1, a2 ∈ [0°,180°], a1 < a2 (math convention: 0=right,90=top,180=left).
- * Inner arc drawn counter-clockwise (sweep=0) from a1→a2.
- * Outer arc drawn clockwise (sweep=1) back from a2→a1.
  */
 function wedgePath(
   cx: number, cy: number,
@@ -59,6 +58,15 @@ function wedgePath(
   );
 }
 
+// ── Tooltip helpers ───────────────────────────────────────────────────────────
+
+function genLabel(gen: number): string {
+  if (gen === 1) return 'Parent';
+  if (gen === 2) return 'Grandparent';
+  if (gen === 3) return 'Great-grandparent';
+  return `${gen - 2}× Great-grandparent`;
+}
+
 // ── Data types ───────────────────────────────────────────────────────────────
 
 interface WedgeInfo {
@@ -71,6 +79,13 @@ interface WedgeInfo {
   color: string;
 }
 
+interface TooltipState {
+  clientX: number;
+  clientY: number;
+  personId: string;
+  gen: number;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -80,15 +95,14 @@ interface Props {
 }
 
 export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: Props) {
-  // ── Resolve the effective focus person ──────────────────────────────────
-  // If the store has no focus (null→''), pick the first person who IS a
-  // child in some family group (i.e. has at least one parent in the tree).
+  // ── Tooltip state ────────────────────────────────────────────────────────
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
+  // ── Resolve the effective focus person ──────────────────────────────────
   const effectiveFocusId = useMemo(() => {
     const personSet = new Set(graph.persons.map((p) => p.id));
     if (focusPersonId && personSet.has(focusPersonId)) return focusPersonId;
 
-    // Build set of all person IDs that appear as children in FGs
     const childIds = new Set<string>();
     for (const fg of graph.familyGroups) {
       for (const cId of Object.keys(fg.children)) {
@@ -96,7 +110,6 @@ export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: P
       }
     }
 
-    // Prefer a person who has ancestors (is a child somewhere)
     const candidate = graph.persons.find((p) => childIds.has(p.id));
     return candidate?.id ?? graph.persons[0]?.id ?? '';
   }, [graph, focusPersonId]);
@@ -111,7 +124,6 @@ export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: P
   const { wedges, focusPerson } = useMemo(() => {
     const fgById = new Map(graph.familyGroups.map((fg) => [fg.id, fg]));
 
-    // personId → FG where that person is listed as a child
     const childToFG = new Map<string, string>();
     for (const fg of graph.familyGroups) {
       for (const cId of Object.keys(fg.children)) {
@@ -119,7 +131,6 @@ export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: P
       }
     }
 
-    // BFS upward: (gen, slot) in the binary ancestor tree
     const bin = new Map<string, { gen: number; slot: number }>();
     if (effectiveFocusId) {
       bin.set(effectiveFocusId, { gen: 0, slot: 0 });
@@ -144,23 +155,19 @@ export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: P
       }
     }
 
-    // Build wedge list (skip gen 0 = focus person)
     const wedges: WedgeInfo[] = [];
     for (const [personId, { gen, slot }] of bin) {
       if (gen === 0) continue;
 
       const count = Math.pow(2, gen);
-      // Map slot → polar angles.
-      // Fan "space": slot 0 (leftmost) → polar 180°, slot count-1 → polar 0°.
-      const fanA1 = (slot       / count) * 180;   // 0 = left side of chart
+      const fanA1 = (slot       / count) * 180;
       const fanA2 = ((slot + 1) / count) * 180;
-      const a1 = 180 - fanA2;   // polar start (smaller = right half)
-      const a2 = 180 - fanA1;   // polar end   (larger  = left half)
+      const a1 = 180 - fanA2;
+      const a2 = 180 - fanA1;
 
       const rIn  = FOCUS_R + (gen - 1) * RING_W;
       const rOut = FOCUS_R +  gen      * RING_W;
 
-      // Colour family: which grandparent quadrant does this slot fall into?
       const colorIdx = Math.min(3, Math.floor((slot / count) * 4));
       const shade    = Math.min(gen - 1, PALETTE[0].length - 1);
       const color    = PALETTE[colorIdx][shade];
@@ -172,11 +179,11 @@ export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: P
   }, [graph, effectiveFocusId, maxGenerations, personMap]);
 
   // ── SVG viewport ────────────────────────────────────────────────────────
-  const maxR  = FOCUS_R + maxGenerations * RING_W;   // e.g. 520 for 4 gens
-  const viewW = maxR * 2 + 40;                        // e.g. 1080
-  const viewH = maxR + FOCUS_R + 40;                  // e.g. 640
-  const CX    = viewW / 2;                            // e.g. 540
-  const CY    = maxR + 20;                            // e.g. 540
+  const maxR  = FOCUS_R + maxGenerations * RING_W;
+  const viewW = maxR * 2 + 40;
+  const viewH = maxR + FOCUS_R + 40;
+  const CX    = viewW / 2;
+  const CY    = maxR + 20;
 
   const focusYears = [
     focusPerson?.birthYear,
@@ -185,153 +192,224 @@ export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: P
 
   const hasAncestors = wedges.length > 0;
 
+  // ── Tooltip person data ──────────────────────────────────────────────────
+  const tooltipPerson = tooltip ? personMap.get(tooltip.personId) : null;
+  const tooltipYears  = tooltipPerson
+    ? [
+        tooltipPerson.birthYear,
+        tooltipPerson.isLiving ? 'Living' : tooltipPerson.deathYear,
+      ].filter(Boolean).join('–')
+    : '';
+
   return (
-    <div style={{ lineHeight: 0 }}>
-      <svg
-        viewBox={`0 0 ${viewW} ${viewH}`}
-        width={viewW}
-        height={viewH}
-        style={{ display: 'block' }}
-        aria-label="Ancestry fan chart"
-      >
-        {/* ── Wedges ── */}
-        {wedges.map(({ personId, gen, a1, a2, rIn, rOut, color }) => {
-          const person = personMap.get(personId);
-          const span   = a2 - a1;
-          if (span < 1) return null;
+    <>
+      <div style={{ lineHeight: 0 }}>
+        <svg
+          viewBox={`0 0 ${viewW} ${viewH}`}
+          width={viewW}
+          height={viewH}
+          style={{ display: 'block' }}
+          aria-label="Ancestry fan chart"
+          onMouseLeave={() => setTooltip(null)}
+        >
+          {/* ── Hover highlight style ── */}
+          <style>{`
+            .fan-wedge { cursor: pointer; transition: filter 0.1s; }
+            .fan-wedge:hover { filter: brightness(0.82); }
+            .fan-focus { cursor: default; }
+          `}</style>
 
-          const tA = (a1 + a2) / 2;          // midpoint polar angle
-          const tR = (rIn + rOut) / 2;        // midpoint radius
-          const [tx, ty] = polar(CX, CY, tR, tA);
+          {/* ── Wedges ── */}
+          {wedges.map(({ personId, gen, a1, a2, rIn, rOut, color }) => {
+            const person = personMap.get(personId);
+            const span   = a2 - a1;
+            if (span < 1) return null;
 
-          // Rotate text to read radially outward from centre.
-          // At tA=90° (top): rotation=0° (horizontal).
-          // At tA=135° (upper-left): rotation=-45°.
-          // At tA=45° (upper-right): rotation=+45°.
-          const rotation = 90 - tA;
+            const tA = (a1 + a2) / 2;
+            const tR = (rIn + rOut) / 2;
+            const [tx, ty] = polar(CX, CY, tR, tA);
 
-          const surname   = (person?.displaySurname  ?? '').toUpperCase();
-          const givenName =  person?.displayGivenName ?? '';
-          const birthYr   =  person?.birthYear;
-          const deathYr   =  person?.isLiving ? 'Living' : person?.deathYear;
-          const years     = [birthYr, deathYr].filter(Boolean).join('–');
+            // < 10° → radial text (runs outward along radius)
+            // ≥ 10° → tangential text (follows the arc)
+            const useRadial = span < 10;
+            const rotation  = useRadial ? -tA : (90 - tA);
 
-          // Shrink text for narrow outer rings
-          const fs     = gen === 1 ? 13 : gen === 2 ? 11.5 : gen === 3 ? 10 : 8.5;
-          const lineH  = fs * 1.3;
+            const surname   = (person?.displaySurname  ?? '').toUpperCase();
+            const givenName =  person?.displayGivenName ?? '';
+            const birthYr   =  person?.birthYear;
+            const deathYr   =  person?.isLiving ? 'Living' : person?.deathYear;
+            const years     = [birthYr, deathYr].filter(Boolean).join('–');
 
-          // Skip given name / years in very narrow wedges
-          const showGiven = span >= 12 && !!givenName;
-          const showYears = span >= 8  && !!years;
+            const fs    = gen === 1 ? 13 : gen === 2 ? 11.5 : gen === 3 ? 10 : gen === 4 ? 8.5 : 7.5;
+            const lineH = fs * 1.3;
 
-          // Truncate long strings to avoid overflow
-          const maxCh = Math.max(5, Math.round(span * 1.6));
-          const dGiven   = givenName.length > maxCh ? givenName.slice(0, maxCh - 1) + '…'  : givenName;
-          const dSurname = surname.length   > maxCh ? surname.slice(0, maxCh - 1)   + '…'  : surname;
+            const maxCh = useRadial
+              ? Math.max(5, Math.floor(RING_W * 0.9 / (fs * 0.58)))
+              : Math.max(5, Math.round(span * 1.6));
 
-          // Build lines and centre them vertically
-          type Line = { txt: string; bold: boolean; dy: number };
-          const lines: Line[] = [];
-          let totalH = 0;
-          if (showGiven)         { lines.push({ txt: dGiven,   bold: false, dy: 0 }); totalH += lineH; }
-                                   lines.push({ txt: dSurname, bold: true,  dy: 0 }); totalH += lineH;
-          if (showYears)         { lines.push({ txt: years,    bold: false, dy: 0 }); totalH += lineH * 0.9; }
-          let cur = -totalH / 2 + lineH * 0.5;
-          for (const line of lines) { line.dy = cur; cur += lineH; }
+            const showGiven = useRadial ? (span >= 3 && !!givenName) : (span >= 12 && !!givenName);
+            const showYears = !useRadial && span >= 8 && !!years;
 
-          return (
-            <g key={personId}>
-              <path
-                d={wedgePath(CX, CY, rIn, rOut, a1, a2)}
-                fill={color}
-                stroke="#ffffff"
-                strokeWidth={1.5}
-              />
-              <g transform={`translate(${f(tx)},${f(ty)}) rotate(${f(rotation)})`}>
-                {lines.map(({ txt, bold, dy }, i) => (
-                  <text
-                    key={i}
-                    textAnchor="middle"
-                    dy={f(dy)}
-                    fontSize={bold ? fs : fs * 0.9}
-                    fontWeight={bold ? '700' : '400'}
-                    fill="#1a202c"
-                    style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
-                  >
-                    {txt}
-                  </text>
-                ))}
+            const dGiven   = givenName.length > maxCh ? givenName.slice(0, maxCh - 1) + '…' : givenName;
+            const dSurname = surname.length   > maxCh ? surname.slice(0, maxCh - 1)   + '…' : surname;
+
+            type Line = { txt: string; bold: boolean; dy: number };
+            const lines: Line[] = [];
+            let totalH = 0;
+            if (showGiven)  { lines.push({ txt: dGiven,   bold: false, dy: 0 }); totalH += lineH; }
+                              lines.push({ txt: dSurname, bold: true,  dy: 0 }); totalH += lineH;
+            if (showYears)  { lines.push({ txt: years,    bold: false, dy: 0 }); totalH += lineH * 0.9; }
+            let cur = -totalH / 2 + lineH * 0.5;
+            for (const line of lines) { line.dy = cur; cur += lineH; }
+
+            return (
+              <g key={personId}>
+                <path
+                  className="fan-wedge"
+                  d={wedgePath(CX, CY, rIn, rOut, a1, a2)}
+                  fill={color}
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                  onMouseEnter={(e) =>
+                    setTooltip({ clientX: e.clientX, clientY: e.clientY, personId, gen })
+                  }
+                  onMouseMove={(e) =>
+                    setTooltip((prev) =>
+                      prev ? { ...prev, clientX: e.clientX, clientY: e.clientY } : null
+                    )
+                  }
+                  onMouseLeave={() => setTooltip(null)}
+                />
+                <g
+                  transform={`translate(${f(tx)},${f(ty)}) rotate(${f(rotation)})`}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {lines.map(({ txt, bold, dy }, i) => (
+                    <text
+                      key={i}
+                      textAnchor="middle"
+                      dy={f(dy)}
+                      fontSize={bold ? fs : fs * 0.9}
+                      fontWeight={bold ? '700' : '400'}
+                      fill="#1a202c"
+                      style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
+                    >
+                      {txt}
+                    </text>
+                  ))}
+                </g>
               </g>
-            </g>
-          );
-        })}
+            );
+          })}
 
-        {/* ── Dividing line between father (left) and mother (right) sides ── */}
-        {hasAncestors && (
-          <line
-            x1={CX} y1={CY - FOCUS_R}
-            x2={CX} y2={CY - maxR}
-            stroke="#ffffff" strokeWidth={1.5} strokeDasharray="4 3"
+          {/* ── Dividing line ── */}
+          {hasAncestors && (
+            <line
+              x1={CX} y1={CY - FOCUS_R}
+              x2={CX} y2={CY - maxR}
+              stroke="#ffffff" strokeWidth={1.5} strokeDasharray="4 3"
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+
+          {/* ── Centre circle (focus person) ── */}
+          <circle
+            className="fan-focus"
+            cx={CX} cy={CY} r={FOCUS_R}
+            fill="#e2ddd3" stroke="#ffffff" strokeWidth={2}
           />
-        )}
 
-        {/* ── Centre circle (focus person) ── */}
-        <circle cx={CX} cy={CY} r={FOCUS_R} fill="#e2ddd3" stroke="#ffffff" strokeWidth={2} />
-
-        {focusPerson ? (
-          <>
-            <text
-              x={CX} y={CY - (focusYears ? 10 : 0)}
-              textAnchor="middle"
-              fontSize={13}
-              fontWeight="600"
-              fill="#2d3748"
-              style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
-            >
-              {focusPerson.displayGivenName}
-            </text>
-            <text
-              x={CX} y={CY + 6}
-              textAnchor="middle"
-              fontSize={13}
-              fontWeight="700"
-              fill="#1a202c"
-              style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
-            >
-              {focusPerson.displaySurname?.toUpperCase() ?? ''}
-            </text>
-            {focusYears && (
+          {focusPerson ? (
+            <g style={{ pointerEvents: 'none' }}>
               <text
-                x={CX} y={CY + 22}
+                x={CX} y={CY - (focusYears ? 10 : 0)}
                 textAnchor="middle"
-                fontSize={10.5}
-                fill="#4a5568"
+                fontSize={13}
+                fontWeight="600"
+                fill="#2d3748"
                 style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
               >
-                {focusYears}
+                {focusPerson.displayGivenName}
               </text>
-            )}
-          </>
-        ) : (
-          <text x={CX} y={CY + 5} textAnchor="middle" fontSize={12} fill="#718096"
-            style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}>
-            No focus person
-          </text>
-        )}
+              <text
+                x={CX} y={CY + 6}
+                textAnchor="middle"
+                fontSize={13}
+                fontWeight="700"
+                fill="#1a202c"
+                style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
+              >
+                {focusPerson.displaySurname?.toUpperCase() ?? ''}
+              </text>
+              {focusYears && (
+                <text
+                  x={CX} y={CY + 22}
+                  textAnchor="middle"
+                  fontSize={10.5}
+                  fill="#4a5568"
+                  style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
+                >
+                  {focusYears}
+                </text>
+              )}
+            </g>
+          ) : (
+            <text x={CX} y={CY + 5} textAnchor="middle" fontSize={12} fill="#718096"
+              style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none', pointerEvents: 'none' }}>
+              No focus person
+            </text>
+          )}
 
-        {/* ── Empty state hint ── */}
-        {!hasAncestors && focusPerson && (
-          <text
-            x={CX} y={CY - FOCUS_R - 20}
-            textAnchor="middle"
-            fontSize={13}
-            fill="#718096"
-            style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none' }}
-          >
-            No ancestors found for this person
-          </text>
-        )}
-      </svg>
-    </div>
+          {/* ── Empty state hint ── */}
+          {!hasAncestors && focusPerson && (
+            <text
+              x={CX} y={CY - FOCUS_R - 20}
+              textAnchor="middle"
+              fontSize={13}
+              fill="#718096"
+              style={{ fontFamily: 'system-ui,sans-serif', userSelect: 'none', pointerEvents: 'none' }}
+            >
+              No ancestors found for this person
+            </text>
+          )}
+        </svg>
+      </div>
+
+      {/* ── Tooltip (portal to body so React Flow transforms don't affect it) ── */}
+      {tooltip && tooltipPerson && createPortal(
+        <div
+          style={{
+            position:      'fixed',
+            left:          tooltip.clientX + 14,
+            top:           tooltip.clientY - 10,
+            background:    '#1e2533',
+            color:         '#f0f4ff',
+            padding:       '7px 11px',
+            borderRadius:  7,
+            fontSize:      13,
+            lineHeight:    1.45,
+            pointerEvents: 'none',
+            whiteSpace:    'nowrap',
+            zIndex:        99999,
+            boxShadow:     '0 4px 14px rgba(0,0,0,0.45)',
+            userSelect:    'none',
+          }}
+        >
+          {/* Name */}
+          <div style={{ fontWeight: 700, fontSize: 14 }}>
+            {[tooltipPerson.displayGivenName, tooltipPerson.displaySurname]
+              .filter(Boolean)
+              .join(' ')}
+          </div>
+
+          {/* Generation label */}
+          <div style={{ fontSize: 11.5, opacity: 0.72, marginTop: 2 }}>
+            {genLabel(tooltip.gen)}
+            {tooltipYears ? ` · ${tooltipYears}` : ''}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
