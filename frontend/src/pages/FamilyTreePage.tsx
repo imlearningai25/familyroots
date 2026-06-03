@@ -43,7 +43,8 @@ async function createPerson(
       given_name: fields.givenName,
       surname: fields.surname,
       sex: fields.sex,
-      is_living: fields.isLiving,
+      is_living:   fields.isLiving,
+      is_deceased: !fields.isLiving,
     }),
   });
   if (!res.ok) {
@@ -1621,7 +1622,15 @@ export default function FamilyTreePage() {
     useCanvasStore.getState().setSelectedPersonId(null);
   }, []);
 
-  const handleAdded = useCallback(() => { refetch(); }, [refetch]);
+  const handleAdded = useCallback(async () => {
+    const result = await refetch();
+    if (result.data) {
+      const { expandedNodeIds, setExpandedNodeIds } = useCanvasStore.getState();
+      const next = new Set(expandedNodeIds);
+      for (const p of result.data.persons) next.add(p.id);
+      setExpandedNodeIds(next);
+    }
+  }, [refetch]);
 
   const panelPersonName = useMemo(() => {
     if (!panelPersonId || !graph) return '';

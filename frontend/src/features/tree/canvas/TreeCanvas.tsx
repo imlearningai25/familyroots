@@ -346,6 +346,7 @@ export interface TreeCanvasHandle {
   loadPositions: (positions: Record<string, { x: number; y: number }>) => void;
   exportPdf: () => Promise<void>;
   scrollToNode: (personId: string) => void;
+  refitView: () => void;
 }
 
 const TreeCanvasInner = forwardRef<TreeCanvasHandle, TreeCanvasInnerProps>(
@@ -429,6 +430,9 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
     scrollToNode: (personId) => {
       fitView({ nodes: [{ id: personId }], duration: 600, padding: 0.5, minZoom: 0.8, maxZoom: 1.5 });
     },
+    refitView: () => {
+      fitView({ duration: 500, padding: 0.15, minZoom: 0.05 });
+    },
     exportPdf: async () => {
       if (!containerRef.current) return;
       const { toPng }         = await import('html-to-image');
@@ -446,11 +450,23 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
   }), [displayNodes, fitView]);
 
   useEffect(() => {
-    // Build a cheap key to detect real layout changes (not just object identity)
+    // Key covers structural changes: node added/removed or position moved by layout
     const key = layoutNodes.map((n) => `${n.id}:${n.position.x.toFixed(0)},${n.position.y.toFixed(0)}`).join('|');
-    if (key === prevLayoutKey.current) return;
-    prevLayoutKey.current = key;
-    setDisplayNodes(layoutNodes);
+    if (key !== prevLayoutKey.current) {
+      // Structure changed — full reset (new/removed nodes, layout mode change, etc.)
+      prevLayoutKey.current = key;
+      setDisplayNodes(layoutNodes);
+    } else {
+      // Structure unchanged — only patch node data so edits (name, status, photo)
+      // appear immediately without disturbing the user's manual drag positions
+      const dataMap = new Map(layoutNodes.map((n) => [n.id, n.data]));
+      setDisplayNodes((curr) =>
+        curr.map((dn) => {
+          const newData = dataMap.get(dn.id);
+          return newData ? { ...dn, data: newData } : dn;
+        }),
+      );
+    }
   }, [layoutNodes]);
 
   // Reset node positions + fit view when the reset button is pressed
