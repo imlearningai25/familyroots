@@ -219,7 +219,7 @@ export const PERSON_NODE_HEIGHT = 88;
 export const FAMILY_NODE_SIZE = 24;
 
 export const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
-  mode: 'vertical',
+  mode: 'ancestor',
   direction: 'TB',
   nodeHGap: 40,
   nodeVGap: 80,
