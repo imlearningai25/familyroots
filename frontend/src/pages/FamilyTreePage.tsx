@@ -1571,6 +1571,9 @@ export default function FamilyTreePage() {
   const [unionChildFgId,    setUnionChildFgId]    = useState<string | null>(null);
   const [showEdit,          setShowEdit]          = useState(false);
   const [showActivity,      setShowActivity]      = useState(false);
+  const [searchOpen,        setSearchOpen]        = useState(false);
+  const [searchQuery,       setSearchQuery]       = useState('');
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   const setTreeId        = useCanvasStore((s) => s.setTreeId);
   const resetCanvas      = useCanvasStore((s) => s.reset);
@@ -1582,6 +1585,25 @@ export default function FamilyTreePage() {
     if (treeId) setTreeId(treeId);
     return () => resetCanvas();
   }, [treeId, setTreeId, resetCanvas]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.ctrlKey && e.code === 'Space') {
+        e.preventDefault();
+        setSearchOpen((o) => {
+          if (!o) setTimeout(() => searchInputRef.current?.focus(), 30);
+          else setSearchQuery('');
+          return !o;
+        });
+      }
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setSearchQuery('');
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const { data: graph, isLoading, refetch } = useQuery({
     queryKey: queryKeys.trees.detail(treeId ?? ''),
@@ -1656,6 +1678,74 @@ export default function FamilyTreePage() {
             setUnionChildFgId(fgId);
           }}
         />
+
+        {searchOpen && (() => {
+          const query = searchQuery.toLowerCase().trim();
+          const results = (graph?.persons ?? []).filter((p) => {
+            const name = `${p.displayGivenName ?? ''} ${p.displaySurname ?? ''}`.toLowerCase();
+            return !query || name.includes(query);
+          }).slice(0, 10);
+          return (
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 w-80">
+              <div className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+                  <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search people…"
+                    className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400 text-gray-900"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && results.length > 0) {
+                        canvasRef.current?.scrollToNode(results[0].id);
+                        setSearchOpen(false);
+                        setSearchQuery('');
+                      }
+                    }}
+                  />
+                  <span className="text-[10px] text-gray-300 font-mono shrink-0">Esc</span>
+                </div>
+                {results.length > 0 ? (
+                  <ul className="max-h-60 overflow-y-auto py-1">
+                    {results.map((p) => {
+                      const name = [p.displayGivenName, p.displaySurname].filter(Boolean).join(' ') || '(unnamed)';
+                      return (
+                        <li key={p.id}>
+                          <button
+                            className="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-brand-50 hover:text-brand-700 flex items-center gap-3"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              canvasRef.current?.scrollToNode(p.id);
+                              setSearchOpen(false);
+                              setSearchQuery('');
+                            }}
+                          >
+                            {p.photoUrl ? (
+                              <img src={p.photoUrl} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-xs text-gray-400">
+                                {(p.displayGivenName?.[0] ?? p.displaySurname?.[0] ?? '?').toUpperCase()}
+                              </span>
+                            )}
+                            {name}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="px-4 py-3 text-sm text-gray-400">No people found.</p>
+                )}
+              </div>
+              <p className="text-center text-[10px] text-white/70 mt-1.5">Ctrl+Space to close</p>
+            </div>
+          );
+        })()}
 
         <SelectionPanel
           key={panelPersonId ?? '__empty__'}

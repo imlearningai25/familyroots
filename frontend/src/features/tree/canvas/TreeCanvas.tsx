@@ -74,23 +74,6 @@ function getDescendantNodeIds(
   return result;
 }
 
-/** Collect the visible parent + child person IDs that belong to a family group. */
-function getFamilyGroupMemberIds(
-  familyGroupId: string,
-  graph: ApiTreeGraph,
-  visibleIds: Set<string>,
-): Set<string> {
-  const result = new Set<string>();
-  const fg = graph.familyGroups.find((g) => g.id === familyGroupId);
-  if (!fg) return result;
-  for (const pid of fg.parentIds) {
-    if (visibleIds.has(pid)) result.add(pid);
-  }
-  for (const cid of Object.keys(fg.children)) {
-    if (visibleIds.has(cid)) result.add(cid);
-  }
-  return result;
-}
 
 // ── Static maps ────────────────────────────────────────────────────────────
 
@@ -362,6 +345,7 @@ export interface TreeCanvasHandle {
   getPositions: () => Record<string, { x: number; y: number }>;
   loadPositions: (positions: Record<string, { x: number; y: number }>) => void;
   exportPdf: () => Promise<void>;
+  scrollToNode: (personId: string) => void;
 }
 
 const TreeCanvasInner = forwardRef<TreeCanvasHandle, TreeCanvasInnerProps>(
@@ -441,6 +425,9 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
         curr.map((n) => ({ ...n, position: positions[n.id] ?? n.position }))
       );
       setTimeout(() => fitView({ duration: 500, padding: 0.15 }), 80);
+    },
+    scrollToNode: (personId) => {
+      fitView({ nodes: [{ id: personId }], duration: 600, padding: 0.5, minZoom: 0.8, maxZoom: 1.5 });
     },
     exportPdf: async () => {
       if (!containerRef.current) return;
@@ -533,6 +520,16 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
   } | null>(null);
 
   const [ctrlDragActive, setCtrlDragActive] = useState(false);
+  const [ctrlDragNodeType, setCtrlDragNodeType] = useState<'person' | 'family-group'>('person');
+  const [ctrlHeld, setCtrlHeld] = useState(false);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlHeld(true);  };
+    const up   = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlHeld(false); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup',   up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, []);
 
   const onNodeDragStart: NodeMouseHandler = useCallback(
     (event, node) => {
@@ -545,20 +542,23 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
       if (node.type === 'person') {
         companionIds = getDescendantNodeIds(node.id, graph, visibleIds);
+        setCtrlDragNodeType('person');
       } else if (node.type === 'family-group') {
-        companionIds = getFamilyGroupMemberIds(node.id, graph, visibleIds);
+        // Ring union drags alone — no members travel with it
+        setCtrlDragNodeType('family-group');
+        ctrlDragRef.current = null;
+        return;
       } else {
         ctrlDragRef.current = null;
         return;
       }
 
-      if (companionIds.size === 0) { ctrlDragRef.current = null; return; }
       ctrlDragRef.current = {
         anchorId:    node.id,
         companionIds,
         lastPos:     { x: node.position.x, y: node.position.y },
       };
-      setCtrlDragActive(true);
+      if (companionIds.size > 0) setCtrlDragActive(true);
     },
     [graph, displayNodes],
   );
@@ -624,9 +624,11 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
     } as unknown as TreeNode;
   }, [layoutMode, graph, focusPersonId]);
 
-  const reactFlowNodes = layoutMode === 'ancestry-fan' && fanNode
-    ? [fanNode]
-    : displayNodes;
+  const reactFlowNodes = useMemo(() => {
+    const base = layoutMode === 'ancestry-fan' && fanNode ? [fanNode] : displayNodes;
+    if (!ctrlHeld) return base;
+    return base.map((n) => n.type === 'family-group' ? { ...n, draggable: true } : n);
+  }, [layoutMode, fanNode, displayNodes, ctrlHeld]);
   const reactFlowEdges = layoutMode === 'ancestry-fan' ? [] : edges;
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -656,9 +658,11 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
   return (
     <div ref={containerRef} className="w-full h-full relative" style={{ background: canvasTheme.canvasBg }}>
-      {ctrlDragActive && (
+      {(ctrlDragActive || ctrlHeld) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-brand-600 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg pointer-events-none select-none">
-          Ctrl drag · moving with descendants
+          {ctrlDragActive
+            ? 'Ctrl drag · moving with descendants'
+            : 'Ctrl · drag a union to move it'}
         </div>
       )}
       <ReactFlow
