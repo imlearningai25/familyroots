@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@store/auth.store';
 import { OAuthButtons } from '@features/auth/components/OAuthButtons';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -82,7 +83,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-muted px-4">
+    <>
+      <SEO
+        title="Sign In"
+        description="Sign in to your FamilyRoots account to access your family trees, ancestry charts, and genealogy tools."
+        canonical="/login"
+        keywords="login, sign in, genealogy account, family tree login"
+      />
+      <div className="min-h-screen flex items-center justify-center bg-surface-muted px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -191,5 +199,6 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+    </>
   );
 }

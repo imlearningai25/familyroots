@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.0",
+    "react-helmet-async": "^2.0.4",
     "@tanstack/react-query": "^5.24.0",
     "@tanstack/react-query-devtools": "^5.24.0",
     "axios": "^1.6.0",

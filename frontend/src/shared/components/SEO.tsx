@@ -1,0 +1,78 @@
+import { Helmet } from 'react-helmet-async';
+
+const SITE_NAME    = 'FamilyRoots';
+const BASE_URL     = import.meta.env.VITE_FRONTEND_BASE_URL ?? 'https://familyroots.aipioneerlab.com';
+const OG_IMAGE     = `${BASE_URL}/og-image.png`;
+const DEFAULT_DESC =
+  'Collaborative genealogy platform to build, visualise, and share your family tree ' +
+  'with fan charts, pedigree views, and relationship tools.';
+const DEFAULT_KW   =
+  'family tree, genealogy, ancestors, family history, pedigree, family chart, ancestor search, family records';
+
+interface SEOProps {
+  title: string;
+  description?: string;
+  keywords?: string;
+  canonical?: string;
+  noIndex?: boolean;
+  ogImage?: string;
+  ogImageAlt?: string;
+  ogType?: 'website' | 'profile' | 'article';
+  jsonLd?: object;
+}
+
+export function SEO({
+  title,
+  description = DEFAULT_DESC,
+  keywords    = DEFAULT_KW,
+  canonical,
+  noIndex     = false,
+  ogImage     = OG_IMAGE,
+  ogImageAlt,
+  ogType      = 'website',
+  jsonLd,
+}: SEOProps) {
+  const fullTitle    = `${title} | ${SITE_NAME}`;
+  const canonicalUrl = canonical
+    ? `${BASE_URL}${canonical}`
+    : typeof window !== 'undefined'
+      ? window.location.href
+      : undefined;
+  const imageAlt = ogImageAlt ?? fullTitle;
+
+  return (
+    <Helmet>
+      {/* Primary */}
+      <title>{fullTitle}</title>
+      <meta name="description"  content={description} />
+      <meta name="keywords"     content={keywords} />
+      <meta name="robots"       content={noIndex ? 'noindex, nofollow' : 'index, follow'} />
+      {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
+
+      {/* Open Graph */}
+      <meta property="og:site_name"   content={SITE_NAME} />
+      <meta property="og:locale"      content="en_US" />
+      <meta property="og:type"        content={ogType} />
+      <meta property="og:title"       content={fullTitle} />
+      <meta property="og:description" content={description} />
+      <meta property="og:image"       content={ogImage} />
+      <meta property="og:image:width"  content="1200" />
+      <meta property="og:image:height" content="630" />
+      <meta property="og:image:alt"    content={imageAlt} />
+      {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
+
+      {/* Twitter Card */}
+      <meta name="twitter:card"        content="summary_large_image" />
+      <meta name="twitter:title"       content={fullTitle} />
+      <meta name="twitter:description" content={description} />
+      <meta name="twitter:image"       content={ogImage} />
+      <meta name="twitter:image:alt"   content={imageAlt} />
+
+      {jsonLd && (
+        <script type="application/ld+json">
+          {JSON.stringify(jsonLd)}
+        </script>
+      )}
+    </Helmet>
+  );
+}

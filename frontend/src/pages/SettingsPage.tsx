@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuthStore } from '@store/auth.store';
+import { SEO } from '@shared/components/SEO';
 import { usePortalThemeStore, PORTAL_PRESETS, PORTAL_PRESET_LABEL, type PortalTheme } from '@store/portalTheme.store';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
@@ -276,8 +277,13 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
+    <div className="p-4 md:p-8 max-w-2xl mx-auto">
+      <SEO
+        title="Settings"
+        description="Manage your FamilyRoots account settings — profile, security, and appearance."
+        noIndex
+      />
+      <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-5 md:mb-6">Settings</h1>
 
       <div className="flex gap-1 mb-8 border-b border-gray-200">
         <TabLink tab="profile"  active={activeTab === 'profile'} />
@@ -293,7 +299,7 @@ export default function SettingsPage() {
         </div>
       ) : activeTab === 'profile' ? (
         <form onSubmit={handleProfileSave} className="space-y-5">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">First name</label>
               <input

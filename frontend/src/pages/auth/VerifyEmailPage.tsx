@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { SEO } from '@shared/components/SEO';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
@@ -48,6 +49,11 @@ export default function VerifyEmailPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-muted px-4">
+      <SEO
+        title="Verify Email"
+        description="Verify your FamilyRoots email address to activate your account."
+        noIndex
+      />
       <div className="w-full max-w-sm text-center">
         <div className="text-4xl mb-4">🌳</div>
         <h1 className="text-xl font-bold text-slate-900 mb-2">FamilyRoots</h1>
