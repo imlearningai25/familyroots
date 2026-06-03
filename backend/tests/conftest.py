@@ -24,6 +24,7 @@ from src.domain.interfaces.repositories import (
     AbstractUserRepository,
 )
 from src.domain.interfaces.unit_of_work import AbstractUnitOfWork
+from src.infrastructure.database.models.tenant import TenantModel
 from src.infrastructure.database.models.user import UserModel
 from src.infrastructure.security.jwt import JWTService
 from src.infrastructure.security.password import PasswordHasher
@@ -31,9 +32,14 @@ from src.infrastructure.security.password import PasswordHasher
 
 # ── Constants ─────────────────────────────────────────────────────
 
-TEST_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-TEST_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
-TEST_SECRET = "test-secret-key-that-is-long-enough-for-hs256"
+TEST_TENANT_ID   = uuid.UUID("00000000-0000-0000-0000-000000000001")
+TEST_USER_ID     = uuid.UUID("00000000-0000-0000-0000-000000000002")
+TEST_SECRET      = "test-secret-key-that-is-long-enough-for-hs256"
+TEST_TENANT_SLUG = "familyroots-system"
+
+# Mirrors the constant in AuthService so tests can reference it without
+# importing a private name from the production module.
+_MAX_FAILED_ATTEMPTS = 5
 
 
 # ── Domain fakes ──────────────────────────────────────────────────
@@ -110,6 +116,14 @@ class FakeUnitOfWork(AbstractUnitOfWork):
         self._users = users or FakeUserRepository()
         self._tenants = FakeTenantRepository()
         self.committed = False
+        # Pre-seed the default tenant so AuthService.register() resolves
+        # the same TEST_TENANT_ID regardless of which slug it looks up.
+        _default_tenant = TenantModel()
+        _default_tenant.id = TEST_TENANT_ID
+        _default_tenant.slug = TEST_TENANT_SLUG
+        _default_tenant.name = "FamilyRoots System"
+        _default_tenant.is_active = True
+        self._tenants._tenants = [_default_tenant]
 
     @property
     def users(self) -> FakeUserRepository:
@@ -131,6 +145,22 @@ class FakeUnitOfWork(AbstractUnitOfWork):
             self._users = users
 
         async def execute(self, stmt: Any) -> Any:
+            # Honour simple equality filters (email == ?, id == ?) from WHERE clause
+            users = list(self._users)
+            try:
+                wc = getattr(stmt, 'whereclause', None)
+                if wc is not None:
+                    clauses = list(getattr(wc, 'clauses', None) or [wc])
+                    for clause in clauses:
+                        key = getattr(getattr(clause, 'left', None), 'key', None)
+                        val = getattr(getattr(clause, 'right', None), 'value', None)
+                        if key == 'email' and val is not None:
+                            users = [u for u in users if u.email == val.lower()]
+                        elif key == 'id' and val is not None:
+                            users = [u for u in users if str(u.id) == str(val)]
+            except Exception:
+                pass
+
             class _Result:
                 def __init__(self, items: list) -> None:
                     self._items = items
@@ -138,7 +168,10 @@ class FakeUnitOfWork(AbstractUnitOfWork):
                     return self
                 def first(self) -> Any:
                     return self._items[0] if self._items else None
-            return _Result(self._users)
+            return _Result(users)
+
+        def add(self, entity: Any) -> None:
+            """No-op — login-event recording doesn't need persistence in unit tests."""
 
     @property
     def _session(self) -> Any:

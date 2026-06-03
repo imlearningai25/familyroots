@@ -89,6 +89,7 @@ class AuthService:
                 password_hash=self._hasher.hash(req.password),
                 given_name=req.given_name,
                 family_name=req.family_name,
+                email_verified=False,
                 email_verification_token=verification_token,
                 app_role="ADMIN" if is_new_tenant else "STANDARD",
             )

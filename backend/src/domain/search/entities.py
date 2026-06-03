@@ -157,7 +157,7 @@ def ancestor_label(depth: int) -> str:
     }
     if depth in labels:
         return labels[depth]
-    return f"{depth - 1}×Great-grandparent"
+    return f"{depth - 2}×Great-grandparent"
 
 
 def descendant_label(depth: int) -> str:
