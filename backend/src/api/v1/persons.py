@@ -83,8 +83,8 @@ async def create_person(
     person_id = _uuid.uuid4()
     await session.execute(
         sa_text("""
-            INSERT INTO persons (id, tenant_id, tree_id, sex, display_given_name, display_surname, is_living)
-            VALUES (:id, :tenant_id, :tree_id, :sex, :given, :surname, :living)
+            INSERT INTO persons (id, tenant_id, tree_id, sex, display_given_name, display_surname, is_living, is_deceased)
+            VALUES (:id, :tenant_id, :tree_id, :sex, :given, :surname, :living, :deceased)
         """),
         {
             "id": person_id,
@@ -94,6 +94,7 @@ async def create_person(
             "given": req.given_name,
             "surname": req.surname,
             "living": req.is_living,
+            "deceased": req.is_deceased,
         },
     )
     from src.domain.collaboration.entities import Action, AuditEntityType

@@ -10,7 +10,8 @@
  *   - Large-family optimisation via viewport culling (built into React Flow)
  */
 
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import React, { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import { AncestryFanChart } from './AncestryFanChart';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -34,9 +35,10 @@ import { UnionEdge } from './edges/UnionEdge';
 import { TreeControls } from './controls/TreeControls';
 import { useTreeLayout } from './useTreeLayout';
 import { useExpandCollapse } from './useExpandCollapse';
+import { ancestorSubgraphIds, descendantSubgraphIds } from './algorithms/ancestorChart';
 import { useCanvasStore } from '@store/canvas.store';
 import { useThemeStore } from '@store/theme.store';
-import type { ApiTreeGraph, TreeNode } from '../types';
+import type { ApiTreeGraph, TreeNode, PersonNodeData } from '../types';
 import { DEFAULT_LAYOUT_OPTIONS } from '../types';
 
 // ── Ctrl+drag helper ───────────────────────────────────────────────────────
@@ -72,29 +74,209 @@ function getDescendantNodeIds(
   return result;
 }
 
-/** Collect the visible parent + child person IDs that belong to a family group. */
-function getFamilyGroupMemberIds(
-  familyGroupId: string,
-  graph: ApiTreeGraph,
-  visibleIds: Set<string>,
-): Set<string> {
-  const result = new Set<string>();
-  const fg = graph.familyGroups.find((g) => g.id === familyGroupId);
-  if (!fg) return result;
-  for (const pid of fg.parentIds) {
-    if (visibleIds.has(pid)) result.add(pid);
-  }
-  for (const cid of Object.keys(fg.children)) {
-    if (visibleIds.has(cid)) result.add(cid);
-  }
-  return result;
-}
 
 // ── Static maps ────────────────────────────────────────────────────────────
+
+// ── Chart legend ──────────────────────────────────────────────────────────
+
+function LegendRow({
+  icon, label, count, color, textColor,
+}: { icon: string; label: string; count: number; color: string; textColor: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span style={{ color, width: 14, textAlign: 'center', fontSize: 13, fontWeight: 700, lineHeight: 1 }}>
+        {icon}
+      </span>
+      <span className="text-xs flex-1" style={{ color: textColor }}>{label}</span>
+      <span className="text-xs font-bold tabular-nums" style={{ color: textColor }}>{count}</span>
+    </div>
+  );
+}
+
+import type { LayoutMode } from '../types';
+
+const LEGEND_TITLES: Record<LayoutMode, string> = {
+  vertical:       'Family Tree',
+  horizontal:     'Family Tree',
+  fan:            'Fan Chart',
+  'ancestry-fan': 'Ancestry Fan',
+  ancestor:       'Ancestor Chart',
+  descendant:     'Descendant Chart',
+  pedigree:       'Pedigree Chart',
+};
+
+// For focus-scoped modes: max generations the chart shows.
+// Absent from this map → full visible tree (vertical / horizontal).
+const FOCUS_MAX_GENS: Partial<Record<LayoutMode, number>> = {
+  fan:            4,
+  'ancestry-fan': 4,
+  pedigree:       4,
+  ancestor:       6,
+  descendant:     6,
+};
+
+function ChartLegend({
+  graph,
+  focusPersonId,
+  mode,
+  visiblePersonIds,
+}: {
+  graph:            ApiTreeGraph;
+  focusPersonId:    string | null;
+  mode:             LayoutMode;
+  /** IDs of persons currently rendered — used for non-focus modes. */
+  visiblePersonIds: Set<string>;
+}) {
+  const stats = useMemo(() => {
+    const maxG = FOCUS_MAX_GENS[mode];
+    let people: typeof graph.persons;
+
+    if (maxG !== undefined && focusPersonId) {
+      // Focus-scoped: use the same subgraph the chart algorithm uses so counts
+      // always match what is visible, not the full expanded-node list.
+      const subIds =
+        mode === 'descendant'
+          ? descendantSubgraphIds(graph, focusPersonId, maxG)
+          : ancestorSubgraphIds(graph, focusPersonId, maxG);
+      people = graph.persons.filter((p) => subIds.has(p.id));
+    } else {
+      // Full-tree modes (vertical / horizontal): count every visible person.
+      people = graph.persons.filter((p) => visiblePersonIds.has(p.id));
+    }
+
+    return {
+      total:   people.length,
+      male:    people.filter((p) => p.sex === 'MALE').length,
+      female:  people.filter((p) => p.sex === 'FEMALE').length,
+      living:  people.filter((p) => p.isLiving).length,
+      dead:    people.filter((p) => p.isDeceased).length,
+    };
+  }, [graph, focusPersonId, mode, visiblePersonIds]);
+
+  const theme = useThemeStore((s) => s.theme);
+
+  if (stats.total === 0) return null;
+
+  return (
+    <div
+      className="backdrop-blur rounded-xl shadow-lg p-3 min-w-[160px]"
+      style={{ background: theme.nodeBg, border: `1px solid ${theme.nodeBorder}` }}
+    >
+      <div className="flex items-center justify-between mb-2.5">
+        <p
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: theme.nodeSubtext }}
+        >
+          {LEGEND_TITLES[mode]}
+        </p>
+        {/* Drag handle hint */}
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="ml-2 shrink-0" style={{ color: theme.nodeSubtext }}>
+          <circle cx="4" cy="3" r="1" fill="currentColor"/>
+          <circle cx="8" cy="3" r="1" fill="currentColor"/>
+          <circle cx="4" cy="6" r="1" fill="currentColor"/>
+          <circle cx="8" cy="6" r="1" fill="currentColor"/>
+          <circle cx="4" cy="9" r="1" fill="currentColor"/>
+          <circle cx="8" cy="9" r="1" fill="currentColor"/>
+        </svg>
+      </div>
+      <div className="space-y-1.5">
+        <LegendRow icon="#" label="People"   count={stats.total}  color={theme.nodeSubtext} textColor={theme.nodeText} />
+        <div className="h-px my-1.5" style={{ background: theme.nodeBorder }} />
+        <LegendRow icon="♂" label="Male"     count={stats.male}   color="#3b82f6"            textColor={theme.nodeText} />
+        <LegendRow icon="♀" label="Female"   count={stats.female} color="#ec4899"            textColor={theme.nodeText} />
+        <div className="h-px my-1.5" style={{ background: theme.nodeBorder }} />
+        <LegendRow icon="●" label="Living"   count={stats.living} color="#22c55e"            textColor={theme.nodeText} />
+        <LegendRow icon="✝" label="Deceased" count={stats.dead}   color={theme.nodeSubtext}  textColor={theme.nodeText} />
+      </div>
+    </div>
+  );
+}
+
+// ── Draggable legend wrapper ──────────────────────────────────────────────
+// Sits absolutely within the canvas container (outside the ReactFlow
+// viewport transform) so it stays fixed on screen while panning/zooming.
+
+function DraggableLegend({ children }: { children: React.ReactNode }) {
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const selfRef    = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const origin     = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
+
+  // Attach global move/up listeners once
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current || !origin.current) return;
+      setDragPos({
+        x: origin.current.px + e.clientX - origin.current.mx,
+        y: origin.current.py + e.clientY - origin.current.my,
+      });
+    };
+    const onUp = () => { isDragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+    };
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();   // prevent ReactFlow from starting a pan
+    e.preventDefault();
+    const el  = selfRef.current;
+    const par = el?.offsetParent as HTMLElement | null;
+    let px = dragPos?.x ?? 16;
+    let py = dragPos?.y ?? 0;
+    if (!dragPos && el && par) {
+      // First drag: capture rendered position so transition is seamless
+      const elR  = el.getBoundingClientRect();
+      const parR = par.getBoundingClientRect();
+      px = elR.left - parR.left;
+      py = elR.top  - parR.top;
+    }
+    isDragging.current = true;
+    origin.current     = { mx: e.clientX, my: e.clientY, px, py };
+  }, [dragPos]);
+
+  // Before first drag use CSS bottom/left so we don't need to know canvas height
+  const posStyle: React.CSSProperties = dragPos
+    ? { left: dragPos.x, top: dragPos.y }
+    : { left: 16, bottom: 60 };
+
+  return (
+    <div
+      ref={selfRef}
+      className="cursor-grab active:cursor-grabbing"
+      style={{ position: 'absolute', zIndex: 10, userSelect: 'none', ...posStyle }}
+      onMouseDown={handleMouseDown}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── Ancestry fan chart node ────────────────────────────────────────────────
+// Renders the full SVG fan chart as a single ReactFlow node so pan/zoom/
+// minimap and all toolbar controls keep working normally.
+
+interface FanNodeData { graph: ApiTreeGraph; focusPersonId: string }
+
+const FanChartNode = memo(function FanChartNode({ data }: { data: FanNodeData }) {
+  return (
+    <AncestryFanChart
+      graph={data.graph}
+      focusPersonId={data.focusPersonId}
+      maxGenerations={4}
+    />
+  );
+});
+FanChartNode.displayName = 'FanChartNode';
 
 const NODE_TYPES: NodeTypes = {
   person: PersonNode,
   'family-group': FamilyGroupNode,
+  'ancestry-fan': FanChartNode as any,
 };
 
 const EDGE_TYPES: EdgeTypes = {
@@ -171,6 +353,8 @@ export interface TreeCanvasHandle {
   getPositions: () => Record<string, { x: number; y: number }>;
   loadPositions: (positions: Record<string, { x: number; y: number }>) => void;
   exportPdf: () => Promise<void>;
+  scrollToNode: (personId: string) => void;
+  refitView: () => void;
 }
 
 const TreeCanvasInner = forwardRef<TreeCanvasHandle, TreeCanvasInnerProps>(
@@ -251,6 +435,12 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
       );
       setTimeout(() => fitView({ duration: 500, padding: 0.15 }), 80);
     },
+    scrollToNode: (personId) => {
+      fitView({ nodes: [{ id: personId }], duration: 600, padding: 0.5, minZoom: 0.8, maxZoom: 1.5 });
+    },
+    refitView: () => {
+      fitView({ duration: 500, padding: 0.15, minZoom: 0.05 });
+    },
     exportPdf: async () => {
       if (!containerRef.current) return;
       const { toPng }         = await import('html-to-image');
@@ -268,11 +458,23 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
   }), [displayNodes, fitView]);
 
   useEffect(() => {
-    // Build a cheap key to detect real layout changes (not just object identity)
+    // Key covers structural changes: node added/removed or position moved by layout
     const key = layoutNodes.map((n) => `${n.id}:${n.position.x.toFixed(0)},${n.position.y.toFixed(0)}`).join('|');
-    if (key === prevLayoutKey.current) return;
-    prevLayoutKey.current = key;
-    setDisplayNodes(layoutNodes);
+    if (key !== prevLayoutKey.current) {
+      // Structure changed — full reset (new/removed nodes, layout mode change, etc.)
+      prevLayoutKey.current = key;
+      setDisplayNodes(layoutNodes);
+    } else {
+      // Structure unchanged — only patch node data so edits (name, status, photo)
+      // appear immediately without disturbing the user's manual drag positions
+      const dataMap = new Map(layoutNodes.map((n) => [n.id, n.data]));
+      setDisplayNodes((curr) =>
+        curr.map((dn) => {
+          const newData = dataMap.get(dn.id);
+          return newData ? { ...dn, data: newData } : dn;
+        }),
+      );
+    }
   }, [layoutNodes]);
 
   // Reset node positions + fit view when the reset button is pressed
@@ -342,6 +544,16 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
   } | null>(null);
 
   const [ctrlDragActive, setCtrlDragActive] = useState(false);
+  const [ctrlDragNodeType, setCtrlDragNodeType] = useState<'person' | 'family-group'>('person');
+  const [ctrlHeld, setCtrlHeld] = useState(false);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlHeld(true);  };
+    const up   = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlHeld(false); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup',   up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, []);
 
   const onNodeDragStart: NodeMouseHandler = useCallback(
     (event, node) => {
@@ -354,20 +566,23 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
       if (node.type === 'person') {
         companionIds = getDescendantNodeIds(node.id, graph, visibleIds);
+        setCtrlDragNodeType('person');
       } else if (node.type === 'family-group') {
-        companionIds = getFamilyGroupMemberIds(node.id, graph, visibleIds);
+        // Ring union drags alone — no members travel with it
+        setCtrlDragNodeType('family-group');
+        ctrlDragRef.current = null;
+        return;
       } else {
         ctrlDragRef.current = null;
         return;
       }
 
-      if (companionIds.size === 0) { ctrlDragRef.current = null; return; }
       ctrlDragRef.current = {
         anchorId:    node.id,
         companionIds,
         lastPos:     { x: node.position.x, y: node.position.y },
       };
-      setCtrlDragActive(true);
+      if (companionIds.size > 0) setCtrlDragActive(true);
     },
     [graph, displayNodes],
   );
@@ -396,6 +611,50 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
     setCtrlDragActive(false);
   }, []);
 
+  // ── Ancestry fan chart node ───────────────────────────────────────────────
+  // When in ancestry-fan mode, override displayNodes with a single custom node
+  // that renders the SVG fan chart.  All ReactFlow infrastructure (pan, zoom,
+  // minimap, toolbar) continues to work normally.
+
+  const fanNode = useMemo(() => {
+    if (layoutMode !== 'ancestry-fan' || !graph) return null;
+
+    // Resolve focus person (same fallback logic as AncestryFanChart itself)
+    const personSet = new Set(graph.persons.map((p) => p.id));
+    let fid = focusPersonId ?? '';
+    if (!fid || !personSet.has(fid)) {
+      const childIds = new Set<string>();
+      for (const fg of graph.familyGroups)
+        for (const cId of Object.keys(fg.children))
+          if (personSet.has(cId)) childIds.add(cId);
+      fid = (graph.persons.find((p) => childIds.has(p.id)) ?? graph.persons[0])?.id ?? '';
+    }
+
+    const FOCUS_R = 80;
+    const RING_W  = 110;
+    const maxR    = FOCUS_R + 4 * RING_W;
+    const viewW   = maxR * 2 + 40;
+    const viewH   = maxR + FOCUS_R + 40;
+
+    return {
+      id:       '__ancestry-fan__',
+      type:     'ancestry-fan',
+      position: { x: -viewW / 2, y: -viewH / 2 },
+      data:     { graph, focusPersonId: fid } satisfies FanNodeData,
+      width:    viewW,
+      height:   viewH,
+      draggable:  false,
+      selectable: false,
+    } as unknown as TreeNode;
+  }, [layoutMode, graph, focusPersonId]);
+
+  const reactFlowNodes = useMemo(() => {
+    const base = layoutMode === 'ancestry-fan' && fanNode ? [fanNode] : displayNodes;
+    if (!ctrlHeld) return base;
+    return base.map((n) => n.type === 'family-group' ? { ...n, draggable: true } : n);
+  }, [layoutMode, fanNode, displayNodes, ctrlHeld]);
+  const reactFlowEdges = layoutMode === 'ancestry-fan' ? [] : edges;
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -423,14 +682,16 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
   return (
     <div ref={containerRef} className="w-full h-full relative" style={{ background: canvasTheme.canvasBg }}>
-      {ctrlDragActive && (
+      {(ctrlDragActive || ctrlHeld) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-brand-600 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg pointer-events-none select-none">
-          Ctrl drag · moving with descendants
+          {ctrlDragActive
+            ? 'Ctrl drag · moving with descendants'
+            : 'Ctrl · drag a union to move it'}
         </div>
       )}
       <ReactFlow
-        nodes={displayNodes}
-        edges={edges}
+        nodes={reactFlowNodes}
+        edges={reactFlowEdges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
@@ -478,6 +739,23 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
           {graph.persons.length} people · {displayNodes.filter((n) => n.type === 'person').length} visible
         </div>
       </ReactFlow>
+
+      {/* Draggable legend — outside ReactFlow so it stays viewport-fixed
+          while the canvas pans/zooms. Shown for every layout mode. */}
+      {graph && (
+        <DraggableLegend>
+          <ChartLegend
+            graph={graph}
+            focusPersonId={focusPersonId ?? null}
+            mode={layoutMode}
+            visiblePersonIds={new Set(
+              reactFlowNodes
+                .filter((n) => n.type === 'person')
+                .map((n) => n.id)
+            )}
+          />
+        </DraggableLegend>
+      )}
     </div>
   );
 }); // end forwardRef TreeCanvasInner

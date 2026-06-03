@@ -24,6 +24,7 @@ class CreatePersonRequest(BaseModel):
     birth_year: Optional[int] = Field(default=None, ge=1, le=9999)
     death_year: Optional[int] = Field(default=None, ge=1, le=9999)
     is_living: bool = True
+    is_deceased: bool = False
 
 
 class UpdatePersonRequest(BaseModel):
