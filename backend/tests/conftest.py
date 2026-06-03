@@ -7,7 +7,16 @@ Layers:
 
 from __future__ import annotations
 
+import os
 import uuid
+
+# Ensure get_settings() can initialise in unit-test workers that never go
+# through the auth_headers fixture.  setdefault is a no-op if the var is
+# already injected by the CI environment.
+os.environ.setdefault(
+    "JWT_SECRET_KEY",
+    "test-secret-key-that-is-long-enough-for-hs256",
+)
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from typing import Any
