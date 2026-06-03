@@ -108,11 +108,11 @@ const LEGEND_TITLES: Record<LayoutMode, string> = {
 // For focus-scoped modes: max generations the chart shows.
 // Absent from this map → full visible tree (vertical / horizontal).
 const FOCUS_MAX_GENS: Partial<Record<LayoutMode, number>> = {
-  fan:            4,
-  'ancestry-fan': 4,
-  pedigree:       4,
-  ancestor:       6,
-  descendant:     6,
+  fan:            8,
+  'ancestry-fan': 8,
+  pedigree:       8,
+  ancestor:       8,
+  descendant:     8,
 };
 
 function ChartLegend({
@@ -267,7 +267,7 @@ const FanChartNode = memo(function FanChartNode({ data }: { data: FanNodeData })
     <AncestryFanChart
       graph={data.graph}
       focusPersonId={data.focusPersonId}
-      maxGenerations={4}
+      maxGenerations={8}
     />
   );
 });
@@ -496,7 +496,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
     if (layoutNodes.length > 0) {
       setTimeout(() => fitView({ duration: 500, padding: 0.15 }), 50);
     }
-  }, [layoutMode, focusPersonId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layoutMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Event handlers ─────────────────────────────────────────────────────────
 

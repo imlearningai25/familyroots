@@ -90,7 +90,7 @@ function applyLayout(
     case 'fan': {
       positions = fanChartLayout(graph, {
         focusPersonId: opts.focusPersonId,
-        maxGenerations: 4,
+        maxGenerations: 8,
         startAngleDeg: 180,
         arcSpanDeg: 180,
         generationRadius: 240,
@@ -105,7 +105,7 @@ function applyLayout(
     }
 
     case 'pedigree': {
-      positions = pedigreeChartLayout(graph, opts.focusPersonId ?? '', 4);
+      positions = pedigreeChartLayout(graph, opts.focusPersonId ?? '', 8);
       break;
     }
 
@@ -113,7 +113,7 @@ function applyLayout(
       positions = ancestorChartLayout(
         graph,
         opts.focusPersonId ?? '',
-        6,
+        8,
         opts.nodeHGap,
         opts.nodeVGap
       );
@@ -124,7 +124,7 @@ function applyLayout(
       positions = descendantChartLayout(
         graph,
         opts.focusPersonId ?? '',
-        6,
+        8,
         opts.nodeHGap,
         opts.nodeVGap
       );

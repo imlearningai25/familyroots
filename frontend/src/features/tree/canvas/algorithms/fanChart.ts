@@ -33,7 +33,7 @@ export interface FanChartOptions {
 
 const DEFAULT_FAN: FanChartOptions = {
   focusPersonId: '',
-  maxGenerations: 4,
+  maxGenerations: 8,
   startAngleDeg: 180,
   arcSpanDeg: 180,
   generationRadius: 220,

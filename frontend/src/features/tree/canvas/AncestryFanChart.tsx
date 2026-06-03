@@ -15,14 +15,14 @@ import type { ApiTreeGraph } from '../types';
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const FOCUS_R = 80;   // radius of the centre circle
-const RING_W  = 110;  // radial width of each generation ring
+const RING_W  = 90;   // radial width of each generation ring (compact for 8 rings)
 
-// 4 colour families × 4 shades (darker for inner rings, lighter for outer)
+// 4 colour families × 8 shades (darker inner rings → lighter outer rings)
 const PALETTE: readonly (readonly string[])[] = [
-  ['#4aada3', '#69bdb5', '#88ccc7', '#b0ddd9'],   // teal
-  ['#5db87d', '#7cc896', '#9bd4ae', '#bde2cb'],   // sage
-  ['#b09c46', '#c4b260', '#d5c67d', '#e4d8a2'],   // gold
-  ['#d07060', '#da8a7a', '#e4a496', '#f0c2b8'],   // salmon
+  ['#4aada3','#5db8ae','#72c2bb','#88ccc7','#9ed6d3','#b0ddd9','#c3e7e4','#d6f0ee'], // teal
+  ['#5db87d','#70c48d','#83cf9e','#9bd4ae','#aedcc0','#bde2cb','#cce9d7','#dbf0e3'], // sage
+  ['#b09c46','#b8a756','#c4b260','#cfbe6e','#d5c67d','#ddcf8e','#e4d8a2','#eee4bc'], // gold
+  ['#d07060','#d47e6e','#da8a7a','#e09789','#e4a496','#e9b0a4','#f0c2b8','#f5d2cc'], // salmon
 ];
 
 // ── Geometry helpers ─────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ interface Props {
   maxGenerations?: number;
 }
 
-export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 4 }: Props) {
+export function AncestryFanChart({ graph, focusPersonId, maxGenerations = 8 }: Props) {
   // ── Resolve the effective focus person ──────────────────────────────────
   // If the store has no focus (null→''), pick the first person who IS a
   // child in some family group (i.e. has at least one parent in the tree).
