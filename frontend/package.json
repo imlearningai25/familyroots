@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.0",
-    "react-helmet-async": "^2.0.4",
     "@tanstack/react-query": "^5.24.0",
     "@tanstack/react-query-devtools": "^5.24.0",
     "axios": "^1.6.0",
@@ -24,6 +23,7 @@
     "jspdf": "^4.2.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "react-helmet-async": "^2.0.4",
     "react-hook-form": "^7.51.0",
     "react-router-dom": "^6.22.0",
     "reactflow": "^11.11.0",
@@ -38,6 +38,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vitejs/plugin-react": "^4.2.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "autoprefixer": "^10.4.0",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
