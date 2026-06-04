@@ -152,6 +152,11 @@ class FakeUnitOfWork(AbstractUnitOfWork):
             _default_user.app_role = "ADMIN"
             _default_user.failed_login_attempts = 0
             _default_user.locked_until = None
+            # Required by UserProfileResponse serialisation
+            _default_user.locale = "en"
+            _default_user.timezone = "UTC"
+            _default_user.created_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            _default_user.updated_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
             self._users._users.append(_default_user)
 
     @property

@@ -119,7 +119,7 @@ class TestPasswordSecurity:
     async def test_nonexistent_user_returns_401_not_404(self, test_client: AsyncClient):
         """Do not leak whether an email exists."""
         r = await test_client.post("/api/v1/auth/login", json={
-            "email": "nobody@nowhere.invalid",
+            "email": "nobody@example.com",
             "password": "AnyPassword!",
         })
         assert r.status_code == 401
