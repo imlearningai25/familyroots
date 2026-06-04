@@ -221,7 +221,7 @@ export const FAMILY_NODE_SIZE = 24;
 export const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
   mode: 'ancestor',
   direction: 'TB',
-  nodeHGap: 40,
+  nodeHGap: 32,
   nodeVGap: 80,
   personNodeWidth: PERSON_NODE_WIDTH,
   personNodeHeight: PERSON_NODE_HEIGHT,

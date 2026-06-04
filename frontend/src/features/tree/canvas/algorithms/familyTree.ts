@@ -1,17 +1,25 @@
 /**
  * familyTreeLayout — compact generational family tree layout.
  *
- * Guarantees:
- *   - Every person at the same generation shares the same Y row.
- *   - Co-parents (spouses) are always placed side-by-side (COUPLE_GAP apart).
- *   - The FG ring sits centred between the two parents.
- *   - Siblings are spread evenly below their FG ring.
- *   - Subtree widths are computed bottom-up so branches don't overlap.
+ * Multi-spouse rule:
+ *   A person with N marriages is the RIGHT anchor of their FIRST (chronologically
+ *   earliest) marriage and the LEFT anchor of every subsequent marriage.  This
+ *   places them between all their spouses:
  *
- * Key fix over the previous version: we track every placed node in `posMap`
- * so that when one spouse is already positioned (placed as a child in their
- * own parents' FG), the other spouse is placed NEXT TO them — not at the
- * theoretical subtree centre, which caused the spouses-far-apart bug.
+ *       [Sp1]──[ring1]──[Person]──[ring2]──[Sp2]
+ *                  |                   |
+ *             [children1]         [children2]
+ *
+ * Collision safety:
+ *   A per-generation right-edge cursor (`rowRightX`) prevents any two nodes on
+ *   the same row from overlapping, even when the subtree-width maths drifts for
+ *   complex multi-marriage graphs.
+ *
+ * Other guarantees:
+ *   - Every person at the same generation shares the same Y row.
+ *   - Children sorted by birth year; siblings spread evenly below their FG ring.
+ *   - FG ring centred between its two parents (symmetric union edges).
+ *   - Subtree widths computed bottom-up to minimise wasted space.
  */
 
 import type { ApiTreeGraph, PositionedNode } from '../../types';
@@ -21,12 +29,12 @@ import {
   FAMILY_NODE_SIZE   as FS,
 } from '../../types';
 
-const COUPLE_GAP          = 24;   // horizontal gap between spouses
-const DEFAULT_SIBLING_GAP = 40;
-const DEFAULT_V_GAP       = 80;
+const COUPLE_GAP          = 20;   // px between adjacent spouse cards
+const DEFAULT_SIBLING_GAP = 32;   // px between sibling subtrees
+const DEFAULT_V_GAP       = 80;   // px between generation rows
 const MARGIN              = 40;
 
-// ── Generation assignment ───────────────────────────────────────────────────
+// ── Generation assignment ────────────────────────────────────────────────────
 
 function computeGenerations(
   graph: ApiTreeGraph,
@@ -36,15 +44,13 @@ function computeGenerations(
 ): Map<string, number> {
   const gen = new Map<string, number>();
 
-  // Root persons (not a child of any FG) start at generation 0
+  // Seed: root persons (no parent FG) start at generation 0
   for (const p of graph.persons) {
     if (!personParentFG.has(p.id)) gen.set(p.id, 0);
   }
 
   // BFS downward from every root
-  const queue: [string, number][] = [];
-  for (const [id, g] of gen) queue.push([id, g]);
-
+  const queue: [string, number][] = [...gen].map(([id, g]) => [id, g]);
   while (queue.length > 0) {
     const [pid, g] = queue.shift()!;
     if ((gen.get(pid) ?? -1) > g) continue;
@@ -57,13 +63,13 @@ function computeGenerations(
     }
   }
 
-  // Any disconnected person defaults to 0
+  // Default isolated persons to gen 0
   for (const p of graph.persons) {
     if (!gen.has(p.id)) gen.set(p.id, 0);
   }
 
-  // Spouse promotion + child cascade — iterate until stable
-  // Co-parents must share the same generation row.
+  // Spouse promotion: co-parents must share the same generation row.
+  // Also push children down if a parent was promoted.
   let stable = false;
   while (!stable) {
     stable = true;
@@ -83,7 +89,7 @@ function computeGenerations(
   return gen;
 }
 
-// ── Main export ─────────────────────────────────────────────────────────────
+// ── Main export ──────────────────────────────────────────────────────────────
 
 export function familyTreeLayout(
   graph: ApiTreeGraph,
@@ -94,11 +100,14 @@ export function familyTreeLayout(
   const sibGap = opts.nodeHGap ?? DEFAULT_SIBLING_GAP;
   const vGap   = opts.nodeVGap ?? DEFAULT_V_GAP;
 
-  // ── Lookup maps ──────────────────────────────────────────────────────────
-  const fgById = new Map(graph.familyGroups.map((fg) => [fg.id, fg]));
+  // ── Lookup maps ──────────────────────────────────────────────────────────────
+  const fgById     = new Map(graph.familyGroups.map((fg) => [fg.id, fg]));
+  const personById = new Map(graph.persons.map((p)  => [p.id, p]));
 
-  const personParentFG = new Map<string, string>(); // childId → fgId
-  const personChildFGs = new Map<string, string[]>(); // parentId → fgId[]
+  // childId → fgId (the one FG this person is a child in)
+  const personParentFG = new Map<string, string>();
+  // parentId → [fgId, ...] (all FGs where this person is a parent)
+  const personChildFGs = new Map<string, string[]>();
 
   for (const fg of graph.familyGroups) {
     for (const cId of Object.keys(fg.children)) personParentFG.set(cId, fg.id);
@@ -109,31 +118,58 @@ export function familyTreeLayout(
     }
   }
 
-  // ── Phase 1: Generation numbers ──────────────────────────────────────────
+  // Sort each person's FG list by the earliest birth year among their children
+  // so FG1 = chronologically first marriage.
+  for (const fgIds of personChildFGs.values()) {
+    fgIds.sort((a, b) => {
+      const minY = (fgId: string) =>
+        Object.keys(fgById.get(fgId)!.children).reduce(
+          (m, id) => Math.min(m, personById.get(id)?.birthYear ?? 9999), 9999
+        );
+      return minY(a) - minY(b);
+    });
+  }
+
+  // ── Phase 1: generation numbers ──────────────────────────────────────────────
   const genMap = computeGenerations(graph, personParentFG, personChildFGs, fgById);
 
   const ROW_H = PH + vGap;
-
-  function yPerson(id: string)  { return MARGIN + (genMap.get(id) ?? 0) * ROW_H; }
-  function yFG(fgId: string) {
-    const fg  = fgById.get(fgId)!;
+  const yPerson = (id: string)  => MARGIN + (genMap.get(id) ?? 0) * ROW_H;
+  const yFG     = (fgId: string) => {
+    const fg = fgById.get(fgId)!;
     const maxParentGen = fg.parentIds.length
       ? Math.max(...fg.parentIds.map((id) => genMap.get(id) ?? 0))
       : 0;
-    // Centred vertically in the gap between parent row bottom and child row top
     return MARGIN + maxParentGen * ROW_H + PH + vGap / 2 - FS / 2;
-  }
+  };
 
-  // ── Phase 2: Subtree widths (bottom-up) ──────────────────────────────────
+  // ── Phase 2: bottom-up subtree widths ────────────────────────────────────────
   const wMemo = new Map<string, number>();
 
   function personW(id: string): number {
     const k = `p:${id}`;
     if (wMemo.has(k)) return wMemo.get(k)!;
     const fgIds = personChildFGs.get(id) ?? [];
-    const w = fgIds.length
-      ? fgIds.reduce((s, fgId, i) => s + fgW(fgId) + (i > 0 ? sibGap : 0), 0)
-      : PW;
+    if (fgIds.length === 0) { wMemo.set(k, PW); return PW; }
+
+    if (fgIds.length === 1) {
+      // Single marriage: standard subtree width
+      const w = fgW(fgIds[0]);
+      wMemo.set(k, w);
+      return w;
+    }
+
+    // Multi-marriage: person sits between Sp1 (left) and Sp2..SpN (right).
+    // Width = leftHalf(FG1) + PW + rightHalves(FG2..FGn)
+    //
+    // leftHalf(FG1)  = the portion of FG1 that is LEFT of the anchor (Sp1 side)
+    // rightHalf(FGi) = the portion that is RIGHT of the anchor (SpN side)
+    const leftW  = fgHalfW(fgIds[0], id, 'left');
+    const rightW = fgIds.slice(1).reduce(
+      (s, fgId, i) => s + (i > 0 ? sibGap : 0) + fgHalfW(fgId, id, 'right'),
+      0,
+    );
+    const w = leftW + PW + rightW;
     wMemo.set(k, w);
     return w;
   }
@@ -143,7 +179,7 @@ export function familyTreeLayout(
     if (wMemo.has(k)) return wMemo.get(k)!;
     const fg       = fgById.get(fgId)!;
     const coupleW  = fg.parentIds.length >= 2 ? PW + COUPLE_GAP + PW : PW;
-    const children = Object.keys(fg.children);
+    const children = sortedChildren(fg);
     if (!children.length) { wMemo.set(k, coupleW); return coupleW; }
     const childrenW = children.reduce((s, cId, i) => s + personW(cId) + (i > 0 ? sibGap : 0), 0);
     const w = Math.max(coupleW, childrenW);
@@ -151,75 +187,139 @@ export function familyTreeLayout(
     return w;
   }
 
-  // ── Phase 3: Placement ───────────────────────────────────────────────────
-  //
-  // posMap tracks the placed x for every person so we can look up where a
-  // pre-placed parent ended up and anchor the spouse NEXT TO them.
+  /**
+   * Half-width of fgId on the given side of anchorId.
+   * 'left'  → the space occupied by the non-anchor spouse + their children + COUPLE_GAP
+   * 'right' → COUPLE_GAP + the space occupied by the non-anchor spouse + their children
+   */
+  function fgHalfW(fgId: string, anchorId: string, side: 'left' | 'right'): number {
+    const fg       = fgById.get(fgId)!;
+    const spouseId = fg.parentIds.find((id) => id !== anchorId);
+    const spouseW  = spouseId ? personW(spouseId) : 0;
+    const children = sortedChildren(fg);
+    const childrenW = children.reduce((s, cId, i) => s + personW(cId) + (i > 0 ? sibGap : 0), 0);
+    const contentW  = Math.max(childrenW, spouseW);
+    return side === 'left'
+      ? contentW + (spouseId ? COUPLE_GAP : 0)
+      : (spouseId ? COUPLE_GAP : 0) + contentW;
+  }
 
-  const result:  PositionedNode[] = [];
-  const posMap   = new Map<string, number>(); // personId → placed x
+  // ── Phase 3: placement ───────────────────────────────────────────────────────
+
+  const result:   PositionedNode[] = [];
+  const posMap    = new Map<string, number>(); // personId → placed x (left edge)
   const placedFGs = new Set<string>();
 
-  function pushPerson(id: string, x: number) {
+  // Per-generation right-edge cursor: guarantees no two nodes on the same row
+  // overlap even when subtree widths drift in complex multi-marriage graphs.
+  const rowRightX = new Map<number, number>(); // gen → rightmost (x + PW)
+
+  function pushPerson(id: string, preferredX: number) {
+    const gen  = genMap.get(id) ?? 0;
+    // Clamp rightward so we never land on an already-occupied slot
+    const minX = (rowRightX.get(gen) ?? MARGIN - COUPLE_GAP) + COUPLE_GAP;
+    const x    = Math.max(preferredX, minX);
     result.push({ id, x, y: yPerson(id) });
     posMap.set(id, x);
+    rowRightX.set(gen, Math.max(rowRightX.get(gen) ?? -Infinity, x + PW));
+  }
+
+  // Children of a family group, sorted oldest → youngest
+  function sortedChildren(fg: ApiTreeGraph['familyGroups'][number]): string[] {
+    return Object.keys(fg.children).sort(
+      (a, b) => (personById.get(a)?.birthYear ?? 9999) - (personById.get(b)?.birthYear ?? 9999),
+    );
+  }
+
+  /**
+   * Ordered parent pair [left, right] for a family group.
+   *
+   * Multi-marriage rule:
+   *   If a parent has N > 1 marriages and this is their FIRST one, they are
+   *   the RIGHT parent so their spouse lands to their left.  For all later
+   *   marriages they are the LEFT parent so new spouses land to their right.
+   *
+   * Single-marriage default: male left, female right; ties by birth year.
+   */
+  function orderedParents(fg: ApiTreeGraph['familyGroups'][number]): [string | undefined, string | undefined] {
+    if (fg.parentIds.length === 0) return [undefined, undefined];
+    if (fg.parentIds.length === 1) return [fg.parentIds[0], undefined];
+
+    const [a, b] = fg.parentIds;
+    const aFGs   = personChildFGs.get(a) ?? [];
+    const bFGs   = personChildFGs.get(b) ?? [];
+
+    // a has multiple marriages and this is a's first → a goes RIGHT
+    if (aFGs.length > 1 && aFGs[0] === fg.id) return [b, a];
+    // a has multiple marriages and this is NOT a's first → a goes LEFT
+    if (aFGs.length > 1 && aFGs[0] !== fg.id) return [a, b];
+
+    // b has multiple marriages and this is b's first → b goes RIGHT
+    if (bFGs.length > 1 && bFGs[0] === fg.id) return [a, b];
+    // b has multiple marriages and this is NOT b's first → b goes LEFT
+    if (bFGs.length > 1 && bFGs[0] !== fg.id) return [b, a];
+
+    // Single marriage for both: male left, female right; ties by birth year
+    const pa = personById.get(a);
+    const pb = personById.get(b);
+    if (pa?.sex === 'MALE'    && pb?.sex !== 'MALE') return [a, b];
+    if (pa?.sex !== 'MALE'    && pb?.sex === 'MALE') return [b, a];
+    return (pa?.birthYear ?? 9999) <= (pb?.birthYear ?? 9999) ? [a, b] : [b, a];
   }
 
   function placeFG(fgId: string, suggestedLeftX: number) {
     if (placedFGs.has(fgId)) return;
     placedFGs.add(fgId);
 
-    const fg  = fgById.get(fgId)!;
-    const myW = fgW(fgId);
-    const [p1Id, p2Id] = fg.parentIds;
-
-    // suggestedCx is the ideal horizontal centre of this FG's full subtree
-    // (computed from the space allocated by the caller).  It drives child
-    // placement regardless of where parents ended up, which prevents the ring
-    // from drifting far right when parents come from different subtrees.
+    const fg          = fgById.get(fgId)!;
+    const myW         = fgW(fgId);
     const suggestedCx = suggestedLeftX + myW / 2;
 
-    // ── Place parents ────────────────────────────────────────────────────
-    //   • Both fresh   → centre couple over suggestedCx
-    //   • One placed   → put the other immediately adjacent (COUPLE_GAP)
-    //   • Both placed  → leave them (they may come from different FGs)
+    const [p1Id, p2Id] = orderedParents(fg);
 
+    // ── Place parents ────────────────────────────────────────────────────────
     if (p1Id && p2Id) {
       const p1Fixed = posMap.has(p1Id);
       const p2Fixed = posMap.has(p2Id);
 
       if (!p1Fixed && !p2Fixed) {
+        // Both fresh: centre couple on suggestedCx
         pushPerson(p1Id, suggestedCx - COUPLE_GAP / 2 - PW);
         pushPerson(p2Id, suggestedCx + COUPLE_GAP / 2);
       } else if (p1Fixed && !p2Fixed) {
-        pushPerson(p2Id, posMap.get(p1Id)! + PW + COUPLE_GAP);
+        // p1 already placed: put p2 immediately to its right
+        // rowRightX clamping inside pushPerson prevents collision with any
+        // previously placed node on the same row (e.g., an earlier spouse).
+        const adjacentX = posMap.get(p1Id)! + PW + COUPLE_GAP;
+        pushPerson(p2Id, adjacentX);
       } else if (!p1Fixed && p2Fixed) {
-        pushPerson(p1Id, posMap.get(p2Id)! - COUPLE_GAP - PW);
+        // p2 already placed: put p1 to the left, but at least MARGIN
+        const adjacentX = posMap.get(p2Id)! - COUPLE_GAP - PW;
+        // Don't use rowRightX here — we're going left intentionally.
+        // Guard: never go below MARGIN.
+        const x = Math.max(adjacentX, MARGIN);
+        result.push({ id: p1Id, x, y: yPerson(p1Id) });
+        posMap.set(p1Id, x);
+        rowRightX.set(
+          genMap.get(p1Id) ?? 0,
+          Math.max(rowRightX.get(genMap.get(p1Id) ?? 0) ?? -Infinity, x + PW),
+        );
       }
-      // Both already placed → leave where they are
     } else if (p1Id) {
       if (!posMap.has(p1Id)) pushPerson(p1Id, suggestedCx - PW / 2);
     }
 
-    // ── Place children centred under suggestedCx ─────────────────────────
-    //
-    // We always use suggestedCx (not the parent midpoint) so children land
-    // inside the space the caller reserved for this subtree.
-
-    const children = Object.keys(fg.children);
+    // ── Children sorted by birth year ────────────────────────────────────────
+    const children = sortedChildren(fg);
 
     if (!children.length) {
-      // No children — ring sits between the parents (or at suggestedCx)
+      // No children: ring sits between the parents
+      const px1 = p1Id ? posMap.get(p1Id) : undefined;
+      const px2 = p2Id ? posMap.get(p2Id) : undefined;
       let ringCx = suggestedCx;
-      if (p1Id && p2Id) {
-        const px1 = posMap.get(p1Id);
-        const px2 = posMap.get(p2Id);
-        if (px1 !== undefined && px2 !== undefined) ringCx = (px1 + px2 + PW) / 2;
-        else if (px1 !== undefined) ringCx = px1 + PW / 2;
-      } else if (p1Id) {
-        const px1 = posMap.get(p1Id);
-        if (px1 !== undefined) ringCx = px1 + PW / 2;
-      }
+      if (px1 !== undefined && px2 !== undefined) ringCx = (px1 + px2 + PW) / 2;
+      else if (px1 !== undefined)                 ringCx = px1 + PW / 2;
+      else if (px2 !== undefined)                 ringCx = px2 + PW / 2;
       result.push({ id: fgId, x: ringCx - FS / 2, y: yFG(fgId) });
       return;
     }
@@ -235,10 +335,11 @@ export function familyTreeLayout(
         if (cFGs.length > 0) {
           let fgX = childX;
           for (const cFgId of cFGs) {
-            placeFG(cFgId, fgX);
-            fgX += fgW(cFgId) + sibGap;
+            if (!placedFGs.has(cFgId)) {
+              placeFG(cFgId, fgX);
+              fgX += fgW(cFgId) + sibGap;
+            }
           }
-          // Ensure the child is placed even if all their FGs were already done
           if (!posMap.has(cId)) pushPerson(cId, childX + (cw - PW) / 2);
         } else {
           pushPerson(cId, childX + (cw - PW) / 2);
@@ -247,39 +348,64 @@ export function familyTreeLayout(
       childX += cw + sibGap;
     }
 
-    // ── Place ring centred over actual child positions ───────────────────
-    //
-    // Re-centering after children are placed means the ring stays above
-    // them even when some siblings were pre-placed by a different subtree.
-    const placedXs = children
-      .map((cId) => posMap.get(cId))
-      .filter((x): x is number => x !== undefined);
-    const ringCx = placedXs.length > 0
-      ? (Math.min(...placedXs) + Math.max(...placedXs) + PW) / 2
-      : suggestedCx;
-
+    // ── Ring centred between the two parents ─────────────────────────────────
+    // Falls back to children midpoint when no parents are placed.
+    const px1 = p1Id ? posMap.get(p1Id) : undefined;
+    const px2 = p2Id ? posMap.get(p2Id) : undefined;
+    let ringCx: number;
+    if (px1 !== undefined && px2 !== undefined) {
+      ringCx = (px1 + px2 + PW) / 2;
+    } else if (px1 !== undefined) {
+      ringCx = px1 + PW / 2;
+    } else if (px2 !== undefined) {
+      ringCx = px2 + PW / 2;
+    } else {
+      const xs = children.map((c) => posMap.get(c)).filter((x): x is number => x !== undefined);
+      ringCx = xs.length ? (Math.min(...xs) + Math.max(...xs) + PW) / 2 : suggestedCx;
+    }
     result.push({ id: fgId, x: ringCx - FS / 2, y: yFG(fgId) });
   }
 
-  // ── Kick-off: root FGs ───────────────────────────────────────────────────
-  const rootFGs = graph.familyGroups.filter((fg) =>
-    fg.parentIds.every((pid) => !personParentFG.has(pid)),
-  );
+  // ── Kick-off: root FGs, sorted by earliest parent birth year ─────────────────
+  const rootFGs = graph.familyGroups
+    .filter((fg) => fg.parentIds.every((pid) => !personParentFG.has(pid)))
+    .sort((a, b) => {
+      const minY = (fg: typeof a) =>
+        fg.parentIds.reduce((m, id) => Math.min(m, personById.get(id)?.birthYear ?? 9999), 9999);
+      return minY(a) - minY(b);
+    });
 
   let curX = MARGIN;
   for (const fg of rootFGs) {
     placeFG(fg.id, curX);
-    curX += fgW(fg.id) + sibGap * 2;
+    curX += fgW(fg.id) + sibGap;
   }
 
-  // Persons not reached by any FG (isolated root persons)
-  for (const p of graph.persons) {
+  // ── Root persons not reached by any root FG (isolated / single parents) ──────
+  const rootPersons = graph.persons
+    .filter((p) => !personParentFG.has(p.id))
+    .sort((a, b) => (a.birthYear ?? 9999) - (b.birthYear ?? 9999));
+
+  for (const p of rootPersons) {
     if (posMap.has(p.id)) continue;
-    pushPerson(p.id, curX);
-    curX += PW + sibGap;
+    const cFGs = personChildFGs.get(p.id) ?? [];
+    if (cFGs.length > 0) {
+      let fgX = curX;
+      for (const cFgId of cFGs) {
+        if (!placedFGs.has(cFgId)) {
+          placeFG(cFgId, fgX);
+          fgX += fgW(cFgId) + sibGap;
+        }
+      }
+      if (!posMap.has(p.id)) pushPerson(p.id, curX + (personW(p.id) - PW) / 2);
+      curX += personW(p.id) + sibGap;
+    } else {
+      pushPerson(p.id, curX);
+      curX += PW + sibGap;
+    }
   }
 
-  // Orphaned FG nodes — try to place near their parents; fall back to curX
+  // ── Orphaned FG nodes (parents placed but FG missed) ─────────────────────────
   for (const fg of graph.familyGroups) {
     if (placedFGs.has(fg.id)) continue;
     const parentXs = fg.parentIds
