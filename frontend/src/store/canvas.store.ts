@@ -54,7 +54,7 @@ const initialState = {
   treeId: null,
   focusPersonId: null,
   selectedPersonId: null,
-  layoutMode: 'ancestor' as LayoutMode,
+  layoutMode: 'vertical' as LayoutMode,
   zoom: 0.8,
   pan: { x: 0, y: 0 },
   expandedNodeIds: new Set<string>(),
