@@ -674,8 +674,8 @@ export default function AdminPage() {
       />
       {/* Header */}
       <div className="mb-4 md:mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Manage users, roles, and permission groups</p>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--portal-text-primary)' }}>Admin Dashboard</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--portal-text-muted)' }}>Manage users, roles, and permission groups</p>
       </div>
 
       {/* Tab bar */}
@@ -720,23 +720,27 @@ export default function AdminPage() {
           </svg>
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or email…"
-            className="w-full h-9 pl-9 pr-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            className="w-full h-9 pl-9 pr-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }} />
         </div>
         <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}>
           <option value="">All roles</option>
           <option value="ADMIN">Admin</option>
           <option value="STANDARD">Standard</option>
           <option value="AUDITOR">Auditor</option>
         </select>
         <select value={verifiedFilter} onChange={(e) => { setVerifiedFilter(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}>
           <option value="">All statuses</option>
           <option value="false">Unverified</option>
           <option value="true">Verified</option>
         </select>
         <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}>
           <option value="created_at_desc">Newest first</option>
           <option value="created_at_asc">Oldest first</option>
           <option value="name_asc">Name A–Z</option>
@@ -758,24 +762,24 @@ export default function AdminPage() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
         {loading && !data ? (
           <div className="flex justify-center py-16">
             <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : data?.items.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 text-sm">No users found.</div>
+          <div className="text-center py-16 text-sm" style={{ color: 'var(--portal-text-muted)' }}>No users found.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last login</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Joined</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                <tr className="border-b" style={{ background: 'var(--portal-main-bg)', borderColor: 'var(--portal-border)' }}>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>User</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Role</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Last login</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Joined</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Actions</th>
                 </tr>
               </thead>
               <tbody className={`divide-y divide-gray-50 ${loading ? 'opacity-50' : ''}`}>
@@ -964,23 +968,23 @@ function PermissionGroupsPanel({ token }: { token: string | null }) {
         <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : groups.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 text-sm">
+          <div className="text-center py-16 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
             No permission groups yet. Create one to get started.
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Group</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Level</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assignments</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+              <tr className="border-b" style={{ background: 'var(--portal-main-bg)', borderColor: 'var(--portal-border)' }}>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Group</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Level</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Assignments</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">

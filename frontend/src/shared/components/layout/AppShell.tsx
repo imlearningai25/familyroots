@@ -25,6 +25,10 @@ export default function AppShell() {
     root.style.setProperty('--portal-nav-active-bg',  portalTheme.navActiveBg);
     root.style.setProperty('--portal-nav-active-text',portalTheme.navActiveText);
     root.style.setProperty('--portal-logo-text',      portalTheme.logoText);
+    root.style.setProperty('--portal-card-bg',        portalTheme.cardBg);
+    root.style.setProperty('--portal-text-primary',   portalTheme.textPrimary);
+    root.style.setProperty('--portal-text-muted',     portalTheme.textMuted);
+    root.style.setProperty('--portal-border',         portalTheme.sidebarBorder);
     document.body.style.setProperty('background', portalTheme.mainBg);
     return () => { document.body.style.removeProperty('background'); };
   }, [portalTheme]);

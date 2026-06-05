@@ -84,7 +84,8 @@ function TreeCard({ tree, onEdit, onDelete, onShare }: TreeCardProps) {
   }, [menuOpen]);
 
   return (
-    <div className="relative bg-white rounded-xl border border-gray-200 hover:border-brand-300 hover:shadow-sm transition-all group">
+    <div className="relative rounded-xl border hover:border-brand-300 hover:shadow-sm transition-all group"
+      style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
       <Link to={`/trees/${tree.id}`} className="block p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="text-3xl">{tree.cover_emoji || DEFAULT_COVER}</div>
@@ -93,7 +94,7 @@ function TreeCard({ tree, onEdit, onDelete, onShare }: TreeCardProps) {
           </span>
         </div>
 
-        <h2 className="font-semibold text-gray-900 group-hover:text-brand-600 transition-colors truncate">
+        <h2 className="font-semibold group-hover:text-brand-600 transition-colors truncate" style={{ color: 'var(--portal-text-primary)' }}>
           {tree.name}
         </h2>
         {tree.description && (
@@ -117,7 +118,8 @@ function TreeCard({ tree, onEdit, onDelete, onShare }: TreeCardProps) {
             ⋯
           </button>
           {menuOpen && (
-            <div className="absolute right-0 bottom-full mb-1 z-20 w-44 bg-white rounded-xl border border-gray-200 shadow-lg py-1">
+            <div className="absolute right-0 bottom-full mb-1 z-20 w-44 rounded-xl border shadow-lg py-1"
+              style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
               <button
                 onClick={(e) => { e.preventDefault(); setMenuOpen(false); onShare(tree); }}
                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -158,7 +160,7 @@ export default function DashboardPage() {
   const [error,   setError]   = useState('');
   const [page,    setPage]    = useState(1);
 
-  const PAGE_SIZE   = 9;
+  const PAGE_SIZE   = 16;
   const totalPages  = Math.ceil(trees.length / PAGE_SIZE);
   const visibleTrees = trees.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -350,7 +352,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
       <SEO
         title="Dashboard"
         description="Manage your family trees, collaborate with members, and explore your ancestry on FamilyRoots."
@@ -359,10 +361,10 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 md:mb-8">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+          <h1 className="text-xl md:text-2xl font-bold" style={{ color: 'var(--portal-text-primary)' }}>
             Welcome back{user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Your family trees</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--portal-text-muted)' }}>Your family trees</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {importError && <p className="text-xs text-red-600 w-full">{importError}</p>}
@@ -410,7 +412,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {visibleTrees.map((tree) => (
           <TreeCard key={tree.id} tree={tree} onEdit={openEdit} onDelete={setDeleteTarget} onShare={setShareTarget} />
         ))}

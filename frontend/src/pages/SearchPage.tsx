@@ -56,7 +56,7 @@ export default function SearchPage() {
         description="Search across family members, trees, and relationships in FamilyRoots."
         noIndex
       />
-      <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">Search</h1>
+      <h1 className="text-xl md:text-2xl font-bold mb-4 md:mb-6" style={{ color: 'var(--portal-text-primary)' }}>Search</h1>
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
@@ -93,17 +93,19 @@ export default function SearchPage() {
                 placeholder="Search people by name…"
                 autoFocus
                 autoComplete="off"
-                className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-4 text-sm
+                className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-4 text-sm
                            shadow-sm placeholder-gray-400 focus:border-indigo-500 focus:outline-none
                            focus:ring-1 focus:ring-indigo-500"
+                style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
               />
             </div>
             <select
               value={selectedTreeId}
               onChange={(e) => setSelectedTreeId(e.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm
-                         text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1
+              className="rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm
+                         focus:border-indigo-500 focus:outline-none focus:ring-1
                          focus:ring-indigo-500 sm:min-w-[160px]"
+              style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
             >
               <option value="">All trees</option>
               {trees?.map((t) => (
@@ -149,7 +151,7 @@ export default function SearchPage() {
           )}
 
           {filteredTrees && filteredTrees.length > 0 && (
-            <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white shadow-sm">
+            <ul className="divide-y rounded-xl border shadow-sm" style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
               {filteredTrees.map((tree) => (
                 <li key={tree.id}>
                   <Link
@@ -158,7 +160,7 @@ export default function SearchPage() {
                   >
                     <span className="text-2xl select-none">🌳</span>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{tree.name}</p>
+                      <p className="font-medium truncate" style={{ color: 'var(--portal-text-primary)' }}>{tree.name}</p>
                       {tree.description && (
                         <p className="text-sm text-gray-500 mt-0.5 truncate">{tree.description}</p>
                       )}

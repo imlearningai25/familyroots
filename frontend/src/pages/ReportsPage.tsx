@@ -112,8 +112,8 @@ export default function ReportsPage() {
         description="View statistics and reports for your family trees on FamilyRoots."
         noIndex
       />
-      <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Reports</h1>
-      <p className="text-sm text-gray-500 mb-6 md:mb-8">Overview of your family trees and genealogy data.</p>
+      <h1 className="text-xl md:text-2xl font-bold mb-1" style={{ color: 'var(--portal-text-primary)' }}>Reports</h1>
+      <p className="text-sm mb-6 md:mb-8" style={{ color: 'var(--portal-text-muted)' }}>Overview of your family trees and genealogy data.</p>
 
       {loading && (
         <div className="flex justify-center py-16">
@@ -136,10 +136,10 @@ export default function ReportsPage() {
               { label: 'Total people',  value: totalPeople,   icon: '👤' },
               { label: 'Collaborators', value: totalMembers,  icon: '👥' },
             ].map(({ label, value, icon }) => (
-              <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
+              <div key={label} className="rounded-xl border p-5" style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
                 <div className="text-2xl mb-2">{icon}</div>
-                <div className="text-2xl font-bold text-gray-900">{value}</div>
-                <div className="text-sm text-gray-500 mt-0.5">{label}</div>
+                <div className="text-2xl font-bold" style={{ color: 'var(--portal-text-primary)' }}>{value}</div>
+                <div className="text-sm mt-0.5" style={{ color: 'var(--portal-text-muted)' }}>{label}</div>
               </div>
             ))}
           </div>
@@ -152,7 +152,7 @@ export default function ReportsPage() {
             </div>
           ) : (
             <div>
-              <h2 className="text-base font-semibold text-gray-900 mb-3">Tree breakdown</h2>
+              <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--portal-text-primary)' }}>Tree breakdown</h2>
 
               {/* ── Toolbar ── */}
               <div className="flex flex-col sm:flex-row gap-2 mb-3">
@@ -168,9 +168,10 @@ export default function ReportsPage() {
                     placeholder="Search trees…"
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                    className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-4 text-sm
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-4 text-sm
                                shadow-sm placeholder-gray-400 focus:border-brand-500 focus:outline-none
                                focus:ring-1 focus:ring-brand-500"
+                  style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
                   />
                 </div>
 
@@ -178,8 +179,9 @@ export default function ReportsPage() {
                 <select
                   value={roleFilter}
                   onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm
-                             text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm
+                             focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
                 >
                   <option value="">All roles</option>
                   <option value="OWNER">Owner</option>
@@ -192,8 +194,9 @@ export default function ReportsPage() {
                 <select
                   value={pageSize}
                   onChange={(e) => { setPageSize(Number(e.target.value) as PageSize); setPage(1); }}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm
-                             text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm
+                             focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
                 >
                   {PAGE_SIZES.map((s) => (
                     <option key={s} value={s}>{s} per page</option>
@@ -217,7 +220,7 @@ export default function ReportsPage() {
               </div>
 
               {/* Table */}
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+              <div className="rounded-xl border overflow-hidden overflow-x-auto" style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
                 {filtered.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
                     <p className="text-sm">No trees match your filters.</p>
@@ -229,16 +232,16 @@ export default function ReportsPage() {
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50">
+                      <tr className="border-b" style={{ background: 'var(--portal-main-bg)', borderColor: 'var(--portal-border)' }}>
                         <th className="text-left px-5 py-3 font-medium text-gray-600 whitespace-nowrap">
                           <button onClick={() => toggleSort('name')}
-                            className="flex items-center gap-0.5 hover:text-gray-900 transition-colors">
+                            className="flex items-center gap-0.5 hover:opacity-80 transition-colors" style={{ color: 'var(--portal-text-muted)' }}>
                             Tree <SortIcon field="name" />
                           </button>
                         </th>
                         <th className="text-left px-5 py-3 font-medium text-gray-600 whitespace-nowrap">
                           <button onClick={() => toggleSort('role')}
-                            className="flex items-center gap-0.5 hover:text-gray-900 transition-colors">
+                            className="flex items-center gap-0.5 hover:opacity-80 transition-colors" style={{ color: 'var(--portal-text-muted)' }}>
                             Role <SortIcon field="role" />
                           </button>
                         </th>

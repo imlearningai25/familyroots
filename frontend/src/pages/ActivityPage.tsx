@@ -214,15 +214,16 @@ export default function ActivityPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Activity Log</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-bold" style={{ color: 'var(--portal-text-primary)' }}>Activity Log</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--portal-text-muted)' }}>
             All actions and login events across every tree
           </p>
         </div>
         <button
           onClick={handleExport}
           disabled={exporting || loading}
-          className="flex items-center gap-2 h-9 px-4 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          className="flex items-center gap-2 h-9 px-4 text-sm border border-gray-300 rounded-lg hover:opacity-80 disabled:opacity-50 transition-colors"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
         >
           {exporting ? (
             <span className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
@@ -251,6 +252,7 @@ export default function ActivityPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by actor, entity, or action…"
             className="w-full h-9 pl-9 pr-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
           />
         </div>
 
@@ -258,7 +260,8 @@ export default function ActivityPage() {
         <select
           value={action}
           onChange={(e) => { setAction(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
         >
           {ACTION_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -269,7 +272,8 @@ export default function ActivityPage() {
         <select
           value={entityType}
           onChange={(e) => { setEntityType(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          className="h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
         >
           {ENTITY_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -279,7 +283,8 @@ export default function ActivityPage() {
         {/* Sort toggle */}
         <button
           onClick={toggleSort}
-          className="h-9 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 bg-white transition-colors"
+          className="h-9 px-3 text-sm border border-gray-300 rounded-lg hover:opacity-80 flex items-center gap-1.5 transition-colors"
+          style={{ background: 'var(--portal-card-bg)', color: 'var(--portal-text-primary)' }}
           title={sort === 'desc' ? 'Newest first' : 'Oldest first'}
         >
           <svg className={`w-4 h-4 text-gray-500 transition-transform ${sort === 'asc' ? 'rotate-180' : ''}`}
@@ -307,7 +312,7 @@ export default function ActivityPage() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
         {loading && !data ? (
           <div className="flex justify-center py-16">
             <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -320,23 +325,23 @@ export default function ActivityPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-44">
+                <tr className="border-b" style={{ background: 'var(--portal-main-bg)', borderColor: 'var(--portal-border)' }}>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider w-44" style={{ color: 'var(--portal-text-muted)' }}>
                     When
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>
                     Actor
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>
                     Action
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>
                     On
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--portal-text-muted)' }}>
                     Tree
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider w-32" style={{ color: 'var(--portal-text-muted)' }}>
                     IP
                   </th>
                 </tr>
