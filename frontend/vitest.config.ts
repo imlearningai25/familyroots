@@ -15,8 +15,9 @@ export default defineConfig({
     },
   },
   test: {
-    globals: true,             // inject describe / it / expect / vi / jest
-    environment: 'jsdom',      // DOM APIs for React component tests
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['e2e/**', 'node_modules/**'],
     coverage: {

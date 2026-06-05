@@ -2,6 +2,7 @@
  * Unit tests for PermissionGuard and isPermitted() helper.
  */
 import React from 'react';
+import { vi, type MockedFunction } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PermissionGuard, isPermitted, ROLE_HIERARCHY, ACTION_MIN_ROLE } from '@shared/components/PermissionGuard';
 
@@ -46,17 +47,20 @@ describe('ROLE_HIERARCHY', () => {
 
 // ── PermissionGuard component ──────────────────────────────────────────────────
 
-// Mock useTreeRole hook
-jest.mock('@shared/components/PermissionGuard', () => ({
-  ...jest.requireActual('@shared/components/PermissionGuard'),
-  useTreeRole: jest.fn(),
-}));
+// vi.mock is hoisted automatically by Vitest; vi.importActual retrieves the real module.
+vi.mock('@shared/components/PermissionGuard', async () => {
+  const actual = await vi.importActual('@shared/components/PermissionGuard');
+  return {
+    ...(actual as object),
+    useTreeRole: vi.fn(),
+  };
+});
 
 import { useTreeRole } from '@shared/components/PermissionGuard';
-const mockUseTreeRole = useTreeRole as jest.MockedFunction<typeof useTreeRole>;
+const mockUseTreeRole = useTreeRole as MockedFunction<typeof useTreeRole>;
 
 describe('PermissionGuard', () => {
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   it('renders children when user has sufficient role', () => {
     mockUseTreeRole.mockReturnValue('EDITOR');
