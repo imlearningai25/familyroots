@@ -10,7 +10,13 @@ Create a new revision:
 from __future__ import annotations
 
 import asyncio
+import sys
 from logging.config import fileConfig
+from pathlib import Path
+
+# Ensure the backend package root (parent of this alembic/ dir) is on sys.path
+# so that `from src.*` imports work regardless of the working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from alembic import context
 from sqlalchemy import pool
