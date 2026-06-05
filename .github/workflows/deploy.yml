@@ -15,7 +15,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  ORG: your-org
+  ORG: ${{ github.repository_owner }}
   NAMESPACE: familyroots
 
 jobs:
