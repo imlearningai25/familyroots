@@ -13,7 +13,7 @@
  */
 
 import React, { lazy, Suspense } from 'react';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthGuard, GuestGuard } from './guards/AuthGuard';
 
 // ── Lazy pages ─────────────────────────────────────────────────────────────
@@ -39,6 +39,8 @@ const ContactPage        = lazy(() => import('@pages/ContactPage'));
 const TermsPage          = lazy(() => import('@pages/TermsPage'));
 const PrivacyPage        = lazy(() => import('@pages/PrivacyPage'));
 const HelpPage           = lazy(() => import('@pages/HelpPage'));
+const LandingPage           = lazy(() => import('@pages/LandingPage'));
+const ConfirmDeletionPage   = lazy(() => import('@pages/ConfirmDeletionPage'));
 
 // AppShell wraps all authenticated routes (sidebar + topbar)
 const AppShell           = lazy(() => import('@shared/components/layout/AppShell'));
@@ -72,6 +74,12 @@ const router = createBrowserRouter([
     ],
   },
 
+  // ── Landing page (public — redirects to /dashboard if already authed) ──
+  {
+    path: '/',
+    element: <Lazy><LandingPage /></Lazy>,
+  },
+
   // ── Public informational pages (no auth required) ────────────────────
   {
     path: '/help',
@@ -88,6 +96,12 @@ const router = createBrowserRouter([
   {
     path: '/privacy',
     element: <Lazy><PrivacyPage /></Lazy>,
+  },
+
+  // ── Account deletion confirmation (public — token arrives here) ─────────
+  {
+    path: '/confirm-deletion',
+    element: <Lazy><ConfirmDeletionPage /></Lazy>,
   },
 
   // ── OAuth callback (public — token arrives here) ───────────────────────
@@ -120,7 +134,6 @@ const router = createBrowserRouter([
       {
         element: <Lazy><AppShell /></Lazy>,
         children: [
-          { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: '/dashboard',                              element: <Lazy><DashboardPage /></Lazy> },
           { path: '/trees/:treeId/persons/:personId',        element: <Lazy><ProfilePage /></Lazy> },
           { path: '/search',                                 element: <Lazy><SearchPage /></Lazy> },

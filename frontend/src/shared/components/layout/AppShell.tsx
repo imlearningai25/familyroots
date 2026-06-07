@@ -104,7 +104,7 @@ export default function AppShell() {
               });
             } finally {
               logout();
-              window.location.href = '/login';
+              window.location.href = '/';
             }
           }}
           className="w-full text-left text-xs px-2 py-1 rounded disabled:opacity-50 hover:underline"

@@ -25,12 +25,13 @@ const TOC = [
   ['ip',             '7. Intellectual Property'],
   ['privacy',        '8. Privacy'],
   ['disclaimers',    '9. Disclaimers'],
-  ['liability',      '10. Limitation of Liability'],
-  ['indemnification','11. Indemnification'],
-  ['termination',    '12. Termination'],
-  ['changes',        '13. Changes to Terms'],
-  ['governing-law',  '14. Governing Law'],
-  ['contact',        '15. Contact'],
+  ['security',       '10. Security & Data Breach'],
+  ['liability',      '11. Limitation of Liability'],
+  ['indemnification','12. Indemnification'],
+  ['termination',    '13. Termination'],
+  ['changes',        '14. Changes to Terms'],
+  ['governing-law',  '15. Governing Law'],
+  ['contact',        '16. Contact'],
 ] as const;
 
 export default function TermsPage() {
@@ -215,7 +216,36 @@ export default function TermsPage() {
                 </p>
               </Section>
 
-              <Section id="liability" title="10. Limitation of Liability">
+              <Section id="security" title="10. Security &amp; Data Breach">
+                <p>
+                  <strong>No guarantee of absolute security.</strong> While AIPioneerLab implements reasonable technical and organisational measures to protect your data — including encrypted storage, access controls, and routine security assessments — no method of transmission over the internet or electronic storage is 100% secure. We cannot guarantee the absolute security of your information.
+                </p>
+                <p>
+                  <strong>Limitation of liability for security incidents.</strong> AIPioneerLab, its officers, directors, employees, contractors, and agents shall <strong>not be held liable or responsible</strong> for any loss, damage, unauthorised access, theft, alteration, or disclosure of your personal data or family tree information that results from:
+                </p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>A cyberattack, hacking, or intrusion by third parties despite reasonable security measures being in place;</li>
+                  <li>A data breach caused by vulnerabilities in third-party services, libraries, or infrastructure providers we rely upon;</li>
+                  <li>Your failure to maintain the confidentiality of your account credentials or use of a weak or reused password;</li>
+                  <li>Unauthorised access resulting from your sharing of login credentials or account access with others;</li>
+                  <li>Force majeure events, including but not limited to natural disasters, government actions, or acts of war;</li>
+                  <li>Any other circumstances beyond our reasonable control.</li>
+                </ul>
+                <p>
+                  <strong>Your responsibility.</strong> You are responsible for maintaining the security of your account. We strongly recommend using a unique, strong password and enabling any available two-factor authentication. You should not share your credentials with anyone.
+                </p>
+                <p>
+                  <strong>Breach notification.</strong> In the event of a data breach that is likely to result in a risk to your rights or freedoms, we will make reasonable efforts to notify affected users within a reasonable timeframe as required by applicable law, and will take steps to mitigate the impact.
+                </p>
+                <p>
+                  <strong>Data backup.</strong> We recommend that you regularly export and retain your own copies of your family tree data using the built-in export features (.frt, ZIP). AIPioneerLab is not liable for any loss of data, including data lost due to system failure, corruption, or a security incident.
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 mt-2">
+                  <strong>Important notice:</strong> By creating an account and using FamilyRoots, you acknowledge and accept that internet-based services carry inherent security risks, and that AIPioneerLab will not be held responsible for any damages arising from unauthorised access to, or compromise of, your account or the platform, to the fullest extent permitted by applicable law.
+                </div>
+              </Section>
+
+              <Section id="liability" title="11. Limitation of Liability">
                 <p>
                   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL AIPIONEERLAB, ITS OFFICERS, DIRECTORS, EMPLOYEES, OR AGENTS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING LOSS OF PROFITS, DATA, GOODWILL, OR OTHER INTANGIBLE LOSSES, ARISING OUT OF OR IN CONNECTION WITH:
                 </p>
@@ -230,13 +260,13 @@ export default function TermsPage() {
                 </p>
               </Section>
 
-              <Section id="indemnification" title="11. Indemnification">
+              <Section id="indemnification" title="12. Indemnification">
                 <p>
                   You agree to indemnify, defend, and hold harmless AIPioneerLab and its affiliates, officers, agents, employees, and partners from any claim, demand, loss, damage, or expense (including reasonable legal fees) arising out of or related to: (a) your use of the Service; (b) your User Content; (c) your violation of these Terms; or (d) your violation of any rights of a third party.
                 </p>
               </Section>
 
-              <Section id="termination" title="12. Termination">
+              <Section id="termination" title="13. Termination">
                 <p>
                   <strong>By you:</strong> You may delete your account at any time through the Settings page. Upon deletion, your personal data and family trees will be removed from our active systems within 30 days, subject to any legal retention obligations.
                 </p>
@@ -244,11 +274,11 @@ export default function TermsPage() {
                   <strong>By us:</strong> We may suspend or terminate your account immediately, without prior notice, if we believe you have violated these Terms or for any other reason at our discretion. We will notify you by email where reasonably practicable.
                 </p>
                 <p>
-                  Upon termination, all rights granted under these Terms immediately cease. Provisions that by their nature should survive termination (including Sections 4, 7, 9, 10, and 11) shall survive.
+                  Upon termination, all rights granted under these Terms immediately cease. Provisions that by their nature should survive termination (including Sections 4, 7, 9, 10, 11, and 12) shall survive.
                 </p>
               </Section>
 
-              <Section id="changes" title="13. Changes to Terms">
+              <Section id="changes" title="14. Changes to Terms">
                 <p>
                   We may update these Terms from time to time. When we make material changes, we will notify you by email or by displaying a prominent notice within the Service at least 14 days before the changes take effect.
                 </p>
@@ -260,7 +290,7 @@ export default function TermsPage() {
                 </p>
               </Section>
 
-              <Section id="governing-law" title="14. Governing Law">
+              <Section id="governing-law" title="15. Governing Law">
                 <p>
                   These Terms shall be governed by and construed in accordance with applicable law. Any disputes arising under these Terms shall first be subject to good-faith negotiation between the parties before being submitted to the appropriate courts or arbitration.
                 </p>
@@ -269,7 +299,7 @@ export default function TermsPage() {
                 </p>
               </Section>
 
-              <Section id="contact" title="15. Contact">
+              <Section id="contact" title="16. Contact">
                 <p>
                   If you have any questions about these Terms, please contact us:
                 </p>

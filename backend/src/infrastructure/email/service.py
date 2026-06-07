@@ -306,6 +306,47 @@ def verification_email(display_name: str, verify_url: str) -> tuple[str, str]:
     return html, text
 
 
+def account_deletion_request_email(display_name: str, confirm_url: str) -> tuple[str, str]:
+    """Email sent when a user requests account deletion — contains confirmation link."""
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:sans-serif;background:#f8fafc;margin:0;padding:32px 16px;">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;border:1px solid #e2e8f0;">
+    <h1 style="font-size:22px;font-weight:700;color:#dc2626;margin:0 0 8px;">Confirm account deletion</h1>
+    <p style="color:#64748b;margin:0 0 6px;">Hi {display_name},</p>
+    <p style="color:#64748b;margin:0 0 16px;">
+      We received a request to permanently delete your FamilyRoots account and all associated data.
+    </p>
+    <p style="color:#64748b;margin:0 0 24px;">
+      Click the button below to confirm. <strong>This action cannot be undone.</strong>
+    </p>
+    <a href="{confirm_url}"
+       style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;
+              padding:12px 28px;border-radius:8px;font-weight:600;font-size:15px;">
+      Confirm account deletion
+    </a>
+    <p style="color:#94a3b8;font-size:12px;margin:24px 0 0;">
+      This link expires in 24 hours. If you did not request this, you can safely ignore this email — your account will not be deleted.
+    </p>
+    <p style="color:#94a3b8;font-size:11px;margin:8px 0 0;word-break:break-all;">
+      Or copy this URL: {confirm_url}
+    </p>
+  </div>
+</body>
+</html>
+"""
+    text = (
+        f"Hi {display_name},\n\n"
+        f"We received a request to permanently delete your FamilyRoots account.\n\n"
+        f"Confirm the deletion by visiting:\n\n"
+        f"{confirm_url}\n\n"
+        f"This link expires in 24 hours. If you did not request this, ignore this email."
+    )
+    return html, text
+
+
 def contact_form_email(
     sender_name: str,
     sender_email: str,

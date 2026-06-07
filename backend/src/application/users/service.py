@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import structlog
 
 from src.application.users.schemas import UpdateUserRequest, UserProfileResponse
-from src.domain.exceptions import InvalidCredentialsError, NotFoundError
+from src.domain.exceptions import (
+    InvalidCredentialsError,
+    NotFoundError,
+    TokenExpiredError,
+    TokenInvalidError,
+)
 from src.domain.interfaces.repositories import AbstractRefreshTokenRepository
 from src.domain.interfaces.unit_of_work import AbstractUnitOfWork
 from src.infrastructure.security.password import PasswordHasher
 
 log = structlog.get_logger(__name__)
+
+_DELETION_TOKEN_EXPIRE = timedelta(hours=24)
 
 
 class UserService:
@@ -94,3 +103,57 @@ class UserService:
 
         await self._tokens.revoke_all_for_user(user_id)
         log.info("user.deleted", user_id=str(user_id))
+
+    async def request_deletion(
+        self,
+        user_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+    ) -> None:
+        async with self._uow:
+            user = await self._uow.users.get_by_id_and_tenant(user_id, tenant_id)
+            if user is None:
+                raise NotFoundError(resource="user", identifier=str(user_id))
+
+            token = secrets.token_hex(32)
+            user.deletion_request_token = token
+            user.deletion_request_expires_at = datetime.now(tz=timezone.utc) + _DELETION_TOKEN_EXPIRE
+            await self._uow.users.update(user)
+
+        await self._send_deletion_request_email(user.email, user.full_name, token)
+        log.info("user.deletion_requested", user_id=str(user_id))
+
+    async def confirm_deletion(self, token: str) -> None:
+        async with self._uow:
+            user = await self._uow.users.get_by_deletion_token(token)  # type: ignore[attr-defined]
+            if user is None or user.deletion_request_expires_at is None:
+                raise TokenInvalidError("Invalid or expired deletion token")
+
+            if user.deletion_request_expires_at < datetime.now(tz=timezone.utc):
+                raise TokenExpiredError()
+
+            user.is_active = False
+            user.deletion_request_token = None
+            user.deletion_request_expires_at = None
+            await self._uow.users.update(user)
+            user_id = user.id
+
+        await self._tokens.revoke_all_for_user(user_id)
+        log.info("user.deletion_confirmed", user_id=str(user_id))
+
+    async def _send_deletion_request_email(
+        self,
+        email: str,
+        display_name: str,
+        token: str,
+    ) -> None:
+        from src.config import get_settings
+        from src.infrastructure.email.service import send_email, account_deletion_request_email
+        settings = get_settings()
+        confirm_url = f"{settings.frontend_base_url}/confirm-deletion?token={token}"
+        html, text = account_deletion_request_email(display_name, confirm_url)
+        await send_email(
+            to=email,
+            subject="Confirm your FamilyRoots account deletion",
+            html_body=html,
+            text_body=text,
+        )

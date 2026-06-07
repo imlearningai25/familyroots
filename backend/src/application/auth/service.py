@@ -108,13 +108,17 @@ class AuthService:
             #    multi-tenant login requires tenant slug in request)
             user = await self._find_user_by_email(req.email)
 
-            # 2. Check account lock
+            # 2. Check account is active
+            if not user.is_active:
+                raise InvalidCredentialsError()
+
+            # 3. Check account lock
             if user.is_locked:
                 assert user.locked_until is not None
                 retry_in = int((user.locked_until - datetime.now(tz=timezone.utc)).total_seconds())
                 raise AccountLockedError(retry_after_seconds=retry_in)
 
-            # 3. Verify password
+            # 4. Verify password
             if not user.password_hash or not self._hasher.verify(req.password, user.password_hash):
                 user.failed_login_attempts += 1
                 if user.failed_login_attempts >= _MAX_FAILED_ATTEMPTS:
@@ -122,17 +126,17 @@ class AuthService:
                 await self._uow.users.update(user)
                 raise InvalidCredentialsError()
 
-            # 4. Check email verification
+            # 5. Check email verification
             if not user.email_verified:
                 raise AccountNotVerifiedError()
 
-            # 5. Reset failure counter, update last login
+            # 6. Reset failure counter, update last login
             user.failed_login_attempts = 0
             user.locked_until = None
             user.last_login_at = datetime.now(tz=timezone.utc)
             await self._uow.users.update(user)
 
-            # 6. Record login event
+            # 7. Record login event
             await self._record_login_event(
                 user_id=user.id,
                 tenant_id=user.tenant_id,

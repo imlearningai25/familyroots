@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response, status
+from pydantic import BaseModel
 
 from src.api.deps import (
     HasherDep,
@@ -15,6 +16,10 @@ from src.application.users.service import UserService
 from src.application.auth.schemas import ChangePasswordRequest
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+class ConfirmDeletionRequest(BaseModel):
+    token: str
 
 
 def _get_user_service(uow: UoWDep, token_store: TokenStoreDep, hasher: HasherDep) -> UserService:
@@ -86,3 +91,37 @@ async def delete_account(
 ) -> None:
     svc = UserService(uow=uow, token_store=token_store, hasher=hasher)
     await svc.delete_account(user.id, user.tenant_id, password)
+
+
+@router.post(
+    "/me/request-deletion",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Request account deletion — sends a confirmation email",
+)
+async def request_deletion(
+    user: VerifiedUserDep,
+    uow: UoWDep,
+    token_store: TokenStoreDep,
+    hasher: HasherDep,
+) -> None:
+    svc = UserService(uow=uow, token_store=token_store, hasher=hasher)
+    await svc.request_deletion(user.id, user.tenant_id)
+
+
+@router.post(
+    "/confirm-deletion",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Confirm account deletion using the token from the confirmation email",
+)
+async def confirm_deletion(
+    req: ConfirmDeletionRequest,
+    uow: UoWDep,
+    token_store: TokenStoreDep,
+    hasher: HasherDep,
+) -> None:
+    svc = UserService(uow=uow, token_store=token_store, hasher=hasher)
+    await svc.confirm_deletion(req.token)

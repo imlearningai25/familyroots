@@ -72,6 +72,10 @@ class UserModel(Base, TenantMixin, TimestampMixin):
     password_reset_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    deletion_request_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    deletion_request_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     email_verification_token: Mapped[str | None] = mapped_column(
         String(128), nullable=True
     )
