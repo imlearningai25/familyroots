@@ -101,6 +101,8 @@ export interface UnionEdgeData {
   isHighlighted?: boolean;
   /** 1-based ordinal when this person has multiple unions of the same type (e.g. 2 → "2nd Marriage") */
   unionOrdinal?: number;
+  /** User-defined label overriding the auto-generated ordinal label */
+  customLabel?: string;
 }
 
 /** Edge from a FamilyGroup to a Person (as a child member) */
@@ -152,6 +154,8 @@ export interface ApiFamilyGroup {
   id: string;
   treeId: string;
   unionType: UnionType;
+  /** User-defined label overriding the auto-generated ordinal (e.g. "Church Wedding") */
+  customLabel?: string;
   parentIds: string[];
   children: Record<string, ParentageType>; // personId → parentageType
 }

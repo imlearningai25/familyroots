@@ -36,40 +36,86 @@ const MARGIN              = 40;
 
 // ── Generation assignment ────────────────────────────────────────────────────
 
+const YEARS_PER_GEN = 25;
+
 function computeGenerations(
   graph: ApiTreeGraph,
   personParentFG: Map<string, string>,
   personChildFGs: Map<string, string[]>,
   fgById: Map<string, ApiTreeGraph['familyGroups'][number]>,
+  alignByBirthYear = false,
 ): Map<string, number> {
   const gen = new Map<string, number>();
 
-  // Seed: root persons (no parent FG) start at generation 0
-  for (const p of graph.persons) {
-    if (!personParentFG.has(p.id)) gen.set(p.id, 0);
-  }
+  if (alignByBirthYear) {
+    // Seed each person's generation from their birth year so that disconnected
+    // sub-trees whose real-world generations differ land on the correct rows.
+    const knownYears = graph.persons
+      .map((p) => p.birthYear)
+      .filter((y): y is number => typeof y === 'number' && y > 1000);
 
-  // BFS downward from every root
-  const queue: [string, number][] = [...gen].map(([id, g]) => [id, g]);
-  while (queue.length > 0) {
-    const [pid, g] = queue.shift()!;
-    if ((gen.get(pid) ?? -1) > g) continue;
-    gen.set(pid, g);
-    for (const fgId of personChildFGs.get(pid) ?? []) {
-      const fg = fgById.get(fgId)!;
-      for (const childId of Object.keys(fg.children)) {
-        if ((gen.get(childId) ?? -1) < g + 1) queue.push([childId, g + 1]);
+    if (knownYears.length > 0) {
+      const anchorYear = Math.min(...knownYears);
+      for (const p of graph.persons) {
+        if (typeof p.birthYear === 'number' && p.birthYear > 1000) {
+          gen.set(p.id, Math.max(0, Math.round((p.birthYear - anchorYear) / YEARS_PER_GEN)));
+        } else {
+          gen.set(p.id, 0); // corrected by structural passes below
+        }
       }
+    } else {
+      // No birth years available — fall through to structure-only seeding
+      for (const p of graph.persons) gen.set(p.id, 0);
+    }
+
+    // Pull parents without a birth year toward their children's generation.
+    // Without this, an unknown-birth-year parent stays at gen=0 even if all
+    // their children are birth-year-seeded several rows lower.
+    const noBirthYear = new Set(
+      graph.persons
+        .filter((p) => !(typeof p.birthYear === 'number' && p.birthYear > 1000))
+        .map((p) => p.id),
+    );
+    let stable = false;
+    while (!stable) {
+      stable = true;
+      for (const fg of graph.familyGroups) {
+        const childGens = Object.keys(fg.children).map((c) => gen.get(c) ?? 0);
+        if (childGens.length === 0) continue;
+        const targetG = Math.min(...childGens) - 1;
+        if (targetG <= 0) continue;
+        for (const pid of fg.parentIds) {
+          if (noBirthYear.has(pid) && (gen.get(pid) ?? 0) < targetG) {
+            gen.set(pid, targetG);
+            stable = false;
+          }
+        }
+      }
+    }
+  } else {
+    // Structure-only: BFS downward from root persons (those with no parent FG).
+    for (const p of graph.persons) {
+      if (!personParentFG.has(p.id)) gen.set(p.id, 0);
+    }
+    const queue: [string, number][] = [...gen].map(([id, g]) => [id, g]);
+    while (queue.length > 0) {
+      const [pid, g] = queue.shift()!;
+      if ((gen.get(pid) ?? -1) > g) continue;
+      gen.set(pid, g);
+      for (const fgId of personChildFGs.get(pid) ?? []) {
+        const fg = fgById.get(fgId)!;
+        for (const childId of Object.keys(fg.children)) {
+          if ((gen.get(childId) ?? -1) < g + 1) queue.push([childId, g + 1]);
+        }
+      }
+    }
+    for (const p of graph.persons) {
+      if (!gen.has(p.id)) gen.set(p.id, 0);
     }
   }
 
-  // Default isolated persons to gen 0
-  for (const p of graph.persons) {
-    if (!gen.has(p.id)) gen.set(p.id, 0);
-  }
-
-  // Spouse promotion: co-parents must share the same generation row.
-  // Also push children down if a parent was promoted.
+  // Structural promotion: co-parents share the same generation row; children
+  // must always be strictly one generation below their parents.
   let stable = false;
   while (!stable) {
     stable = true;
@@ -93,7 +139,7 @@ function computeGenerations(
 
 export function familyTreeLayout(
   graph: ApiTreeGraph,
-  opts: { nodeHGap?: number; nodeVGap?: number } = {},
+  opts: { nodeHGap?: number; nodeVGap?: number; alignByBirthYear?: boolean } = {},
 ): PositionedNode[] {
   if (graph.persons.length === 0) return [];
 
@@ -131,7 +177,7 @@ export function familyTreeLayout(
   }
 
   // ── Phase 1: generation numbers ──────────────────────────────────────────────
-  const genMap = computeGenerations(graph, personParentFG, personChildFGs, fgById);
+  const genMap = computeGenerations(graph, personParentFG, personChildFGs, fgById, opts.alignByBirthYear ?? false);
 
   const ROW_H = PH + vGap;
   const yPerson = (id: string)  => MARGIN + (genMap.get(id) ?? 0) * ROW_H;

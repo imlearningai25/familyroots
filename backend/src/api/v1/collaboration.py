@@ -621,6 +621,118 @@ async def delete_family_group(
     await uow._session.commit()
 
 
+class UpdateFamilyGroupRequest(BaseModel):
+    custom_label: Optional[str] = Field(None, max_length=200)
+
+
+@router.patch(
+    "/trees/{tree_id}/family-groups/{family_group_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Update a family group's custom label",
+)
+async def update_family_group(
+    tree_id: uuid.UUID,
+    family_group_id: uuid.UUID,
+    body: UpdateFamilyGroupRequest,
+    current_user: NotAuditorDep,
+    uow: UoWDep,
+) -> dict:
+    from sqlalchemy import text
+    from src.domain.collaboration.entities import Action, AuditEntityType
+    from src.infrastructure.repositories.collaboration import AuditLogRepository
+
+    row = (await uow._session.execute(
+        text("SELECT id FROM family_groups WHERE id = :fgid AND tree_id = :tid LIMIT 1"),
+        {"fgid": family_group_id, "tid": tree_id},
+    )).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Family group not found")
+
+    label = body.custom_label.strip() if body.custom_label else None
+    await uow._session.execute(
+        text("UPDATE family_groups SET custom_label = :label WHERE id = :fgid"),
+        {"label": label, "fgid": family_group_id},
+    )
+
+    actor_name = f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email
+    await AuditLogRepository(uow._session).append(
+        AuditEntry.create(
+            tree_id=tree_id,
+            tenant_id=current_user.tenant_id,
+            actor_id=current_user.id,
+            actor_display_name=actor_name,
+            action=Action.UPDATE_RELATIONSHIP,
+            entity_type=AuditEntityType.FAMILY_GROUP,
+            entity_id=family_group_id,
+            after={"custom_label": label},
+        )
+    )
+    await uow._session.commit()
+    return {"family_group_id": str(family_group_id), "custom_label": label}
+
+
+@router.delete(
+    "/trees/{tree_id}/family-groups/{family_group_id}/members/{person_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Remove a single person from a family group (parent or child link)",
+)
+async def remove_family_group_member(
+    tree_id: uuid.UUID,
+    family_group_id: uuid.UUID,
+    person_id: uuid.UUID,
+    current_user: NotAuditorDep,
+    uow: UoWDep,
+) -> None:
+    from sqlalchemy import text
+    from src.domain.collaboration.entities import Action, AuditEntityType
+    from src.infrastructure.repositories.collaboration import AuditLogRepository
+
+    # Verify family group belongs to this tree
+    row = (await uow._session.execute(
+        text("SELECT id FROM family_groups WHERE id = :fgid AND tree_id = :tid LIMIT 1"),
+        {"fgid": family_group_id, "tid": tree_id},
+    )).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Family group not found")
+
+    # Delete this person's membership row
+    await uow._session.execute(
+        text("DELETE FROM family_group_members WHERE family_group_id = :fgid AND person_id = :pid"),
+        {"fgid": family_group_id, "pid": person_id},
+    )
+
+    # If no PARENT members remain, the family group is orphaned — delete it entirely
+    parent_count = (await uow._session.execute(
+        text("SELECT COUNT(*) FROM family_group_members WHERE family_group_id = :fgid AND role = 'PARENT'"),
+        {"fgid": family_group_id},
+    )).scalar_one()
+    if parent_count == 0:
+        await uow._session.execute(
+            text("DELETE FROM family_group_members WHERE family_group_id = :fgid"),
+            {"fgid": family_group_id},
+        )
+        await uow._session.execute(
+            text("DELETE FROM family_groups WHERE id = :fgid"),
+            {"fgid": family_group_id},
+        )
+
+    actor_name = f"{current_user.given_name or ''} {current_user.family_name or ''}".strip() or current_user.email
+    await AuditLogRepository(uow._session).append(
+        AuditEntry.create(
+            tree_id=tree_id,
+            tenant_id=current_user.tenant_id,
+            actor_id=current_user.id,
+            actor_display_name=actor_name,
+            action=Action.REMOVE_RELATIONSHIP,
+            entity_type=AuditEntityType.FAMILY_GROUP,
+            entity_id=family_group_id,
+        )
+    )
+    await uow._session.commit()
+
+
 @router.get("/trees", response_model=list[TreeSummaryResponse], summary="List trees the current user belongs to")
 async def list_my_trees(
     current_user: CurrentUserDep,
@@ -759,7 +871,7 @@ async def get_tree_graph(
 
     # Family groups + members
     fg_q = text("""
-        SELECT fg.id, fg.tree_id, fg.union_type,
+        SELECT fg.id, fg.tree_id, fg.union_type, fg.custom_label,
                fgm.person_id, fgm.role, fgm.parentage_type
         FROM family_groups fg
         LEFT JOIN family_group_members fgm ON fgm.family_group_id = fg.id
@@ -778,6 +890,7 @@ async def get_tree_graph(
                 "id": gid,
                 "treeId": str(r.tree_id),
                 "unionType": r.union_type,
+                **({"customLabel": r.custom_label} if r.custom_label else {}),
                 "parentIds": [],
                 "children": {},
             }
@@ -1145,6 +1258,86 @@ class MergeTreesRequest(BaseModel):
     new_tree_name: str = Field(..., min_length=1, max_length=255)
     new_tree_description: Optional[str] = Field(None, max_length=1000)
     sources: list[MergeSource] = Field(..., min_length=2)
+    merge_identical: bool = False
+
+
+class AutoMergeRequest(BaseModel):
+    new_tree_name: str = Field(..., min_length=1, max_length=255)
+    new_tree_description: Optional[str] = Field(None, max_length=1000)
+    tree_ids: list[uuid.UUID] = Field(..., min_length=2)
+
+
+@router.post(
+    "/trees/merge/auto",
+    status_code=status.HTTP_201_CREATED,
+    summary="Auto-detect pivot and merge trees (admin only)",
+)
+async def auto_merge_trees(
+    body: AutoMergeRequest,
+    current_user: AdminUserDep,
+    uow: UoWDep,
+) -> dict:
+    """Find a common member across all selected trees by name, use them as the
+    pivot, and merge all other identical members automatically."""
+    from sqlalchemy import text
+
+    tenant_id = current_user.tenant_id
+
+    # Validate every requested tree exists in the tenant
+    for tree_id in body.tree_ids:
+        row = (await uow._session.execute(
+            text("SELECT id FROM family_trees WHERE id = :tid AND tenant_id = :tenant AND is_deleted = false LIMIT 1"),
+            {"tid": tree_id, "tenant": tenant_id},
+        )).first()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Tree {tree_id} not found")
+
+    # Load persons (name + sex + birth_year) from every tree
+    tree_name_map: dict[uuid.UUID, dict[str, uuid.UUID]] = {}   # tree_id → {name_key: person_id}
+    for tree_id in body.tree_ids:
+        rows = (await uow._session.execute(text("""
+            SELECT id, display_given_name, display_surname
+            FROM persons
+            WHERE tree_id = :tid AND tenant_id = :tenant AND is_deleted = false
+        """), {"tid": tree_id, "tenant": tenant_id})).fetchall()
+
+        tree_name_map[tree_id] = {}
+        for r in rows:
+            given   = (r.display_given_name or "").strip().lower()
+            surname = (r.display_surname or "").strip().lower()
+            if not given and not surname:
+                continue
+            name_key = f"{given}|{surname}"
+            # First occurrence of a name wins (no overwrite)
+            if name_key not in tree_name_map[tree_id]:
+                tree_name_map[tree_id][name_key] = r.id
+
+    # Find names present in ALL selected trees
+    common_names: set[str] = set(tree_name_map[body.tree_ids[0]])
+    for tree_id in body.tree_ids[1:]:
+        common_names &= set(tree_name_map[tree_id])
+
+    if not common_names:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "No member with the same name was found across all selected trees. "
+            "Add a common member to each tree or choose pivot people manually.",
+        )
+
+    # Pick the first common name (alphabetical for determinism) as the pivot
+    pivot_name = sorted(common_names)[0]
+    sources = [
+        MergeSource(tree_id=tid, pivot_person_id=tree_name_map[tid][pivot_name])
+        for tid in body.tree_ids
+    ]
+
+    merge_body = MergeTreesRequest(
+        new_tree_name=body.new_tree_name,
+        new_tree_description=body.new_tree_description,
+        sources=sources,
+        merge_identical=True,
+    )
+    return await merge_trees(merge_body, current_user, uow)
 
 
 @router.post("/trees/merge", status_code=status.HTTP_201_CREATED, summary="Merge multiple trees into one new tree (admin only)")
@@ -1200,13 +1393,15 @@ async def merge_trees(
     for src in body.sources:
         id_map[(src.tree_id, src.pivot_person_id)] = merged_pivot_id
 
-    # 3. Load all persons from each source tree; build the rest of the id_map
+    # 3. Load all persons from each source tree; build the rest of the id_map.
+    #    _src_tree stored temporarily in each dict for the identical-merge pass below.
     all_persons: list[dict] = []
     pivot_data: dict | None = None
 
     for src in body.sources:
         rows = (await uow._session.execute(text("""
-            SELECT id, display_given_name, display_surname, sex, is_living, is_deceased, photo_url
+            SELECT id, display_given_name, display_surname, sex,
+                   is_living, is_deceased, photo_url, birth_year
             FROM persons
             WHERE tree_id = :tid AND tenant_id = :tenant AND is_deleted = false
         """), {"tid": src.tree_id, "tenant": tenant_id})).fetchall()
@@ -1225,6 +1420,7 @@ async def merge_trees(
                     "is_living": r.is_living,
                     "is_deceased": r.is_deceased,
                     "photo_url": r.photo_url,
+                    "birth_year": r.birth_year,
                 }
             elif not is_pivot:
                 all_persons.append({
@@ -1235,19 +1431,75 @@ async def merge_trees(
                     "is_living": r.is_living,
                     "is_deceased": r.is_deceased,
                     "photo_url": r.photo_url,
+                    "birth_year": r.birth_year,
+                    "_src_tree": src.tree_id,  # used below, not written to DB
                 })
+
+    # 3b. Auto-collapse persons with identical names across different source trees.
+    #     Two persons match when:
+    #       • normalized given + surname are equal (both non-empty)
+    #       • sex is compatible (at least one is UNKNOWN/null, or both are equal)
+    #       • birth_year is compatible (null on either side, or equal)
+    #     For each matching group, all occurrences from trees other than the first
+    #     are remapped to the first occurrence's new ID via id_map.
+    if body.merge_identical and all_persons:
+        # name_key → first entry that "owns" the canonical new_id
+        name_to_canonical: dict[str, dict] = {}
+        # old new_id → canonical new_id
+        collapse_map: dict[uuid.UUID, uuid.UUID] = {}
+
+        for p in all_persons:
+            given   = (p["display_given_name"] or "").strip().lower()
+            surname = (p["display_surname"] or "").strip().lower()
+            if not given and not surname:
+                continue
+            name_key = f"{given}|{surname}"
+
+            if name_key not in name_to_canonical:
+                name_to_canonical[name_key] = p
+                continue
+
+            canon = name_to_canonical[name_key]
+
+            # Skip if they come from the same source tree (not a cross-tree duplicate)
+            if p["_src_tree"] == canon["_src_tree"]:
+                continue
+
+            # Check sex compatibility
+            sex_c = canon["sex"] or "UNKNOWN"
+            sex_p = p["sex"] or "UNKNOWN"
+            if sex_c != "UNKNOWN" and sex_p != "UNKNOWN" and sex_c != sex_p:
+                continue
+
+            # Check birth_year compatibility
+            by_c = canon["birth_year"]
+            by_p = p["birth_year"]
+            if by_c is not None and by_p is not None and by_c != by_p:
+                continue
+
+            collapse_map[p["id"]] = canon["id"]
+
+        if collapse_map:
+            # Remove collapsed duplicates from the insert list
+            all_persons = [p for p in all_persons if p["id"] not in collapse_map]
+            # Update id_map so family-group members in collapsed trees remap correctly
+            for k in list(id_map.keys()):
+                if id_map[k] in collapse_map:
+                    id_map[k] = collapse_map[id_map[k]]
 
     # 4. Insert merged pivot person
     if pivot_data:
         await uow._session.execute(text("""
-            INSERT INTO persons (id, tenant_id, tree_id, display_given_name, display_surname, sex, is_living, is_deceased, photo_url)
-            VALUES (:id, :tenant, :tid, :given, :surname, :sex, :living, :deceased, :photo_url)
+            INSERT INTO persons (id, tenant_id, tree_id, display_given_name, display_surname,
+                                 sex, is_living, is_deceased, photo_url, birth_year)
+            VALUES (:id, :tenant, :tid, :given, :surname, :sex, :living, :deceased, :photo_url, :birth_year)
         """), {
             "id": pivot_data["id"], "tenant": tenant_id, "tid": new_tree_id,
             "given": pivot_data["display_given_name"], "surname": pivot_data["display_surname"],
             "sex": pivot_data["sex"] or "UNKNOWN",
             "living": pivot_data["is_living"], "deceased": pivot_data["is_deceased"],
             "photo_url": pivot_data["photo_url"],
+            "birth_year": pivot_data["birth_year"],
         })
 
     # 5. Insert all other persons (skip duplicates: same new_id already inserted)
@@ -1257,21 +1509,23 @@ async def merge_trees(
             continue
         inserted_person_ids.add(p["id"])
         await uow._session.execute(text("""
-            INSERT INTO persons (id, tenant_id, tree_id, display_given_name, display_surname, sex, is_living, is_deceased, photo_url)
-            VALUES (:id, :tenant, :tid, :given, :surname, :sex, :living, :deceased, :photo_url)
+            INSERT INTO persons (id, tenant_id, tree_id, display_given_name, display_surname,
+                                 sex, is_living, is_deceased, photo_url, birth_year)
+            VALUES (:id, :tenant, :tid, :given, :surname, :sex, :living, :deceased, :photo_url, :birth_year)
         """), {
             "id": p["id"], "tenant": tenant_id, "tid": new_tree_id,
             "given": p["display_given_name"], "surname": p["display_surname"],
             "sex": p["sex"] or "UNKNOWN",
             "living": p["is_living"], "deceased": p["is_deceased"],
             "photo_url": p["photo_url"],
+            "birth_year": p["birth_year"],
         })
 
     # 6. Load and insert family groups from each source tree (remapping person IDs)
     inserted_fg_ids: set[uuid.UUID] = set()
     for src in body.sources:
         fg_rows = (await uow._session.execute(text("""
-            SELECT fg.id AS fg_id, fg.union_type,
+            SELECT fg.id AS fg_id, fg.union_type, fg.custom_label,
                    fgm.person_id, fgm.role, fgm.parentage_type
             FROM family_groups fg
             LEFT JOIN family_group_members fgm ON fgm.family_group_id = fg.id
@@ -1283,7 +1537,7 @@ async def merge_trees(
         for r in fg_rows:
             fgid = r.fg_id
             if fgid not in fg_map:
-                fg_map[fgid] = {"union_type": r.union_type, "parent_ids": [], "children": {}}
+                fg_map[fgid] = {"union_type": r.union_type, "custom_label": r.custom_label, "parent_ids": [], "children": {}}
             if r.person_id is None:
                 continue
             new_pid = id_map.get((src.tree_id, r.person_id))
@@ -1301,10 +1555,12 @@ async def merge_trees(
             p2 = parent_ids[1] if len(parent_ids) > 1 else None
 
             await uow._session.execute(text("""
-                INSERT INTO family_groups (id, tenant_id, tree_id, union_type, parent1_id, parent2_id)
-                VALUES (:id, :tenant, :tid, :utype, :p1, :p2)
+                INSERT INTO family_groups (id, tenant_id, tree_id, union_type, custom_label, parent1_id, parent2_id)
+                VALUES (:id, :tenant, :tid, :utype, :clabel, :p1, :p2)
             """), {"id": new_fg_id, "tenant": tenant_id, "tid": new_tree_id,
-                   "utype": fg_data["union_type"] or "UNKNOWN", "p1": p1, "p2": p2})
+                   "utype": fg_data["union_type"] or "UNKNOWN",
+                   "clabel": fg_data.get("custom_label"),
+                   "p1": p1, "p2": p2})
 
             for pid in parent_ids:
                 await uow._session.execute(text("""

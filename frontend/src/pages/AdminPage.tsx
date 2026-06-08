@@ -315,9 +315,221 @@ function EditUserModal({
   );
 }
 
-// ── Merge Trees panel ─────────────────────────────────────────────────────────
+// ── Merge Trees — step 2 sub-component ───────────────────────────────────────
 
-interface MergePersonOption { id: string; display_given_name: string; display_surname: string; photo_url: string | null; }
+interface MergePersonOption {
+  id: string;
+  display_given_name: string;
+  display_surname: string;
+  photo_url: string | null;
+  birth_year: number | null;
+  sex: string;
+}
+
+interface Step2Props {
+  selectedTreeIds: string[];
+  allTrees: TenantTree[];
+  persons: Record<string, MergePersonOption[]>;
+  loadingPersons: Record<string, boolean>;
+  pivots: Record<string, string>;
+  setPivots: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  mergeIdentical: boolean;
+  setMergeIdentical: (v: boolean) => void;
+  mergeError: string;
+  merging: boolean;
+  allPivotsSelected: boolean;
+  onBack: () => void;
+  onMerge: () => void;
+  // Auto-merge
+  autoMerging: boolean;
+  showProgressBar: boolean;
+  autoProgress: number;
+  autoProgressLabel: string;
+  onAutoMerge: () => void;
+}
+
+function Step2MergePanel({
+  selectedTreeIds, allTrees, persons, loadingPersons,
+  pivots, setPivots,
+  mergeIdentical, setMergeIdentical,
+  mergeError, merging, allPivotsSelected,
+  onBack, onMerge,
+  autoMerging, showProgressBar, autoProgress, autoProgressLabel, onAutoMerge,
+}: Step2Props) {
+  // Compute which persons would be auto-merged (live preview)
+  const identicalMatches = React.useMemo(() => {
+    if (!mergeIdentical) return [];
+
+    // name|sex key → [{ treeId, person }]
+    const nameGroups: Record<string, { treeId: string; person: MergePersonOption }[]> = {};
+
+    for (const tid of selectedTreeIds) {
+      const pivotId = pivots[tid];
+      for (const p of (persons[tid] ?? [])) {
+        if (p.id === pivotId) continue;
+        const given   = (p.display_given_name || '').trim().toLowerCase();
+        const surname = (p.display_surname || '').trim().toLowerCase();
+        if (!given && !surname) continue;
+        const key = `${given}|${surname}`;
+        if (!nameGroups[key]) nameGroups[key] = [];
+        nameGroups[key].push({ treeId: tid, person: p });
+      }
+    }
+
+    // Keep only groups that span multiple trees
+    return Object.values(nameGroups).filter(entries => {
+      const trees = new Set(entries.map(e => e.treeId));
+      return trees.size > 1;
+    });
+  }, [mergeIdentical, selectedTreeIds, pivots, persons]);
+
+  const personsLoaded = selectedTreeIds.every(tid => persons[tid] !== undefined);
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-gray-600">
+        For each tree, select the <span className="font-medium">same real person</span> who connects the trees.
+        All pivot people will be merged into one person in the new tree.
+      </p>
+
+      {selectedTreeIds.map(tid => {
+        const tree   = allTrees.find(t => t.id === tid);
+        const pList  = persons[tid] ?? [];
+        const loading = loadingPersons[tid];
+        return (
+          <div key={tid} className="border border-gray-200 rounded-lg p-4">
+            <p className="text-sm font-medium text-gray-800 mb-2">{tree?.name ?? tid}</p>
+            {loading ? (
+              <div className="flex justify-center py-3">
+                <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : pList.length === 0 ? (
+              <p className="text-xs text-gray-400">No people in this tree.</p>
+            ) : (
+              <select
+                value={pivots[tid] ?? ''}
+                onChange={e => setPivots(prev => ({ ...prev, [tid]: e.target.value }))}
+                className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="">— select pivot person —</option>
+                {pList.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {[p.display_given_name, p.display_surname].filter(Boolean).join(' ') || '(unnamed)'}
+                    {p.birth_year ? ` (${p.birth_year})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        );
+      })}
+
+      {/* ── Merge identical checkbox ── */}
+      <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={mergeIdentical}
+            onChange={e => setMergeIdentical(e.target.checked)}
+            className="mt-0.5 rounded border-gray-300 text-brand-500 focus:ring-brand-500"
+          />
+          <div>
+            <span className="text-sm font-medium text-gray-800">Merge identical members</span>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Members with the same name (and compatible birth year / sex) across both trees
+              are collapsed into a single person in the merged tree.
+            </p>
+          </div>
+        </label>
+
+        {/* Live preview of what would be merged */}
+        {mergeIdentical && personsLoaded && (
+          identicalMatches.length > 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <p className="text-xs font-medium text-amber-700 mb-1.5">
+                {identicalMatches.length} member{identicalMatches.length !== 1 ? 's' : ''} will be auto-merged:
+              </p>
+              <ul className="space-y-0.5">
+                {identicalMatches.slice(0, 6).map((group, i) => {
+                  const name = [group[0].person.display_given_name, group[0].person.display_surname]
+                    .filter(Boolean).join(' ') || '(unnamed)';
+                  const by   = group[0].person.birth_year;
+                  return (
+                    <li key={i} className="text-xs text-amber-800 flex items-center gap-1">
+                      <span className="text-amber-400">•</span>
+                      {name}{by ? ` (${by})` : ''}
+                      <span className="text-amber-500 ml-1">
+                        — found in {group.length} trees
+                      </span>
+                    </li>
+                  );
+                })}
+                {identicalMatches.length > 6 && (
+                  <li className="text-xs text-amber-600">
+                    … and {identicalMatches.length - 6} more
+                  </li>
+                )}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">
+              No members with identical names found across the selected trees.
+            </p>
+          )
+        )}
+      </div>
+
+      {mergeError && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError}</p>
+      )}
+
+      {/* Auto-merge progress bar (shown only if operation takes >1.5 s) */}
+      {showProgressBar && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>{autoProgressLabel}</span>
+            <span>{autoProgress}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-brand-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${autoProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          onClick={onBack}
+          disabled={merging || autoMerging}
+          className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Back
+        </button>
+        <button
+          onClick={onMerge}
+          disabled={!allPivotsSelected || merging || autoMerging}
+          className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        >
+          {merging && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />}
+          {merging ? 'Merging…' : 'Create merged tree'}
+        </button>
+        <button
+          onClick={onAutoMerge}
+          disabled={merging || autoMerging}
+          title="Automatically find common members across all selected trees and create a merged tree"
+          className="px-4 py-2 border border-brand-400 text-brand-600 text-sm font-medium rounded-lg hover:bg-brand-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        >
+          {autoMerging && <span className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin inline-block" />}
+          {autoMerging ? 'Auto-merging…' : 'Auto'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Merge Trees panel ─────────────────────────────────────────────────────────
 
 function MergeTreesPanel({ token }: { token: string | null }) {
   const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
@@ -339,10 +551,19 @@ function MergeTreesPanel({ token }: { token: string | null }) {
   // Pivot selections: tree_id → person_id
   const [pivots, setPivots] = useState<Record<string, string>>({});
 
+  // Identical-merge option
+  const [mergeIdentical, setMergeIdentical] = useState(false);
+
   // Submit state
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState('');
   const [result, setResult] = useState<{ tree_id: string; tree_name: string; person_count: number } | null>(null);
+
+  // Auto-merge state
+  const [autoMerging, setAutoMerging] = useState(false);
+  const [autoProgress, setAutoProgress] = useState(0);
+  const [autoProgressLabel, setAutoProgressLabel] = useState('');
+  const [showProgressBar, setShowProgressBar] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/admin/trees`, { headers: authHeader, credentials: 'include' })
@@ -383,7 +604,12 @@ function MergeTreesPanel({ token }: { token: string | null }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
         credentials: 'include',
-        body: JSON.stringify({ new_tree_name: newName.trim(), new_tree_description: newDesc.trim() || null, sources }),
+        body: JSON.stringify({
+          new_tree_name: newName.trim(),
+          new_tree_description: newDesc.trim() || null,
+          sources,
+          merge_identical: mergeIdentical,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -398,9 +624,66 @@ function MergeTreesPanel({ token }: { token: string | null }) {
     }
   }
 
+  async function handleAutoMerge() {
+    if (selectedTreeIds.length < 2) return;
+    setAutoMerging(true);
+    setAutoProgress(0);
+    setAutoProgressLabel('');
+    setShowProgressBar(false);
+    setMergeError('');
+
+    // Show progress bar only if request takes longer than 1.5 s
+    const showBarTimer = setTimeout(() => {
+      setShowProgressBar(true);
+      setAutoProgress(10);
+      setAutoProgressLabel('Finding common members…');
+    }, 1500);
+
+    // Simulated progress stages
+    const stage1 = setTimeout(() => { setAutoProgress(35); setAutoProgressLabel('Comparing trees…'); }, 2500);
+    const stage2 = setTimeout(() => { setAutoProgress(60); setAutoProgressLabel('Building merged tree…'); }, 4000);
+    const stage3 = setTimeout(() => { setAutoProgress(82); setAutoProgressLabel('Linking relationships…'); }, 5500);
+    const stage4 = setTimeout(() => { setAutoProgress(92); setAutoProgressLabel('Finalising…'); }, 7000);
+
+    try {
+      const res = await fetch(`${API_BASE}/trees/merge/auto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        credentials: 'include',
+        body: JSON.stringify({
+          new_tree_name: newName.trim(),
+          new_tree_description: newDesc.trim() || null,
+          tree_ids: selectedTreeIds,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).detail ?? 'Auto-merge failed');
+      }
+      setAutoProgress(100);
+      setAutoProgressLabel('Done!');
+      await new Promise(r => setTimeout(r, 400));
+      setResult(await res.json());
+      setStep(3);
+    } catch (e) {
+      setMergeError((e as Error).message);
+    } finally {
+      clearTimeout(showBarTimer);
+      clearTimeout(stage1);
+      clearTimeout(stage2);
+      clearTimeout(stage3);
+      clearTimeout(stage4);
+      setAutoMerging(false);
+      setShowProgressBar(false);
+      setAutoProgress(0);
+    }
+  }
+
   function reset() {
     setStep(1); setNewName(''); setNewDesc(''); setSelectedTreeIds([]);
     setPersons({}); setPivots({}); setMergeError(''); setResult(null);
+    setMergeIdentical(false);
+    setAutoMerging(false); setAutoProgress(0); setAutoProgressLabel(''); setShowProgressBar(false);
   }
 
   const allPivotsSelected = selectedTreeIds.length >= 2 && selectedTreeIds.every(tid => !!pivots[tid]);
@@ -510,64 +793,26 @@ function MergeTreesPanel({ token }: { token: string | null }) {
 
       {/* Step 2 */}
       {step === 2 && (
-        <div className="space-y-5">
-          <p className="text-sm text-gray-600">
-            For each tree, select the <span className="font-medium">same real person</span> who connects the trees.
-            All pivot people will be merged into one person in the new tree.
-          </p>
-
-          {selectedTreeIds.map(tid => {
-            const tree = allTrees.find(t => t.id === tid);
-            const pList = persons[tid] ?? [];
-            const loading = loadingPersons[tid];
-            return (
-              <div key={tid} className="border border-gray-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-gray-800 mb-2">{tree?.name ?? tid}</p>
-                {loading ? (
-                  <div className="flex justify-center py-3">
-                    <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : pList.length === 0 ? (
-                  <p className="text-xs text-gray-400">No people in this tree.</p>
-                ) : (
-                  <select
-                    value={pivots[tid] ?? ''}
-                    onChange={e => setPivots(prev => ({ ...prev, [tid]: e.target.value }))}
-                    className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="">— select pivot person —</option>
-                    {pList.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {[p.display_given_name, p.display_surname].filter(Boolean).join(' ') || '(unnamed)'}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            );
-          })}
-
-          {mergeError && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError}</p>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep(1)}
-              className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleMerge}
-              disabled={!allPivotsSelected || merging}
-              className="px-4 py-2 bg-brand-500 text-white text-sm font-medium rounded-lg hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              {merging && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />}
-              {merging ? 'Merging…' : 'Create merged tree'}
-            </button>
-          </div>
-        </div>
+        <Step2MergePanel
+          selectedTreeIds={selectedTreeIds}
+          allTrees={allTrees}
+          persons={persons}
+          loadingPersons={loadingPersons}
+          pivots={pivots}
+          setPivots={setPivots}
+          mergeIdentical={mergeIdentical}
+          setMergeIdentical={setMergeIdentical}
+          mergeError={mergeError}
+          merging={merging}
+          allPivotsSelected={allPivotsSelected}
+          onBack={() => setStep(1)}
+          onMerge={handleMerge}
+          autoMerging={autoMerging}
+          showProgressBar={showProgressBar}
+          autoProgress={autoProgress}
+          autoProgressLabel={autoProgressLabel}
+          onAutoMerge={handleAutoMerge}
+        />
       )}
     </div>
   );

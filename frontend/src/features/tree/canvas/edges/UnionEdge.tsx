@@ -7,19 +7,27 @@
  *   COHABITATION ╌╌╌╌  dashed
  *   UNKNOWN      ┄┄┄┄  dotted
  *
- * When a person has multiple unions of the same type, each edge shows
- * an ordinal label: "1st Marriage", "2nd Marriage", etc.
+ * A label appears when the person has multiple unions of the same type
+ * (e.g. "1st Marriage", "2nd Marriage").  If a custom_label is set on the
+ * family group it is shown instead.  Double-clicking the label lets the user
+ * rename it to any freeform text (saved to family_groups.custom_label).
  */
 
-import React, { memo } from 'react';
+import React, { memo, useRef, useState } from 'react';
 import {
   EdgeLabelRenderer,
   getStraightPath,
   type EdgeProps,
 } from 'reactflow';
+import { useQueryClient } from '@tanstack/react-query';
 import type { UnionEdgeData } from '../../types';
 import { UNION_STROKE } from '../../types';
 import { useThemeStore } from '@store/theme.store';
+import { useCanvasStore } from '@store/canvas.store';
+import { useAuthStore } from '@store/auth.store';
+import { queryKeys } from '@queries/keys';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 const UNION_COLORS: Record<UnionEdgeData['unionType'], string> = {
   MARRIAGE: '#f59e0b',
@@ -48,30 +56,144 @@ function UnionEdgeComponent({
   sourceY,
   targetX,
   targetY,
-  sourcePosition,
-  targetPosition,
   data,
+  selected,
+  target: familyGroupId,
 }: EdgeProps<UnionEdgeData>) {
-  const edgeWidth  = useThemeStore((s) => s.theme.edgeWidth);
+  const edgeWidth   = useThemeStore((s) => s.theme.edgeWidth);
+  const treeId      = useCanvasStore((s) => s.treeId);
+  const token       = useAuthStore((s) => s.accessToken);
+  const queryClient = useQueryClient();
+
   const unionType  = data?.unionType ?? 'UNKNOWN';
-  const color      = UNION_COLORS[unionType];
+  const color      = selected ? '#f97316' : UNION_COLORS[unionType];
   const dashArray  = UNION_STROKE[unionType];
   const isSolid    = dashArray === 'solid';
   const isMarriage = unionType === 'MARRIAGE';
 
-  const hl         = data?.isHighlighted;
-  const opacity    = hl === true ? 1 : hl === false ? 0.15 : 1;
-  const strokeW    = hl === true ? edgeWidth * 1.6 : edgeWidth;
+  const hl      = data?.isHighlighted;
+  const opacity = selected ? 1 : hl === true ? 1 : hl === false ? 0.15 : 1;
+  const strokeW = selected ? edgeWidth * 2.5 : hl === true ? edgeWidth * 1.6 : edgeWidth;
 
-  const ordinal    = data?.unionOrdinal;
-  const ordinalLabel = ordinal != null
-    ? `${ordinalSuffix(ordinal)} ${UNION_TYPE_LABEL[unionType]}`
-    : undefined;
+  const ordinal      = data?.unionOrdinal;
+  const customLabel  = data?.customLabel;
+  // The visible label: custom takes priority, then ordinal, then nothing
+  const displayLabel = customLabel ?? (
+    ordinal != null ? `${ordinalSuffix(ordinal)} ${UNION_TYPE_LABEL[unionType]}` : undefined
+  );
+  // Only show the label (and allow editing) when there is something to show
+  const hasLabel = displayLabel != null;
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft,     setDraft]     = useState('');
+  const [saving,    setSaving]    = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function openEditor(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(customLabel ?? '');
+    setSaveError('');
+    setIsEditing(true);
+    // Focus the input after React renders it
+    setTimeout(() => inputRef.current?.select(), 0);
+  }
+
+  async function commitEdit() {
+    if (!treeId || !familyGroupId) { setIsEditing(false); return; }
+    const trimmed = draft.trim();
+    // No change → just close
+    if (trimmed === (customLabel ?? '')) { setIsEditing(false); return; }
+
+    setSaving(true);
+    setSaveError('');
+    try {
+      const res = await fetch(`${API_BASE}/trees/${treeId}/family-groups/${familyGroupId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ custom_label: trimmed || null }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setSaveError((d as any).detail ?? `Error ${res.status}`);
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.trees.detail(treeId) });
+      setIsEditing(false);
+    } catch (err: any) {
+      setSaveError(err?.message ?? 'Network error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); commitEdit(); }
+    if (e.key === 'Escape') { setIsEditing(false); }
+  }
 
   const [edgePath, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+  const glowFilter = selected ? 'drop-shadow(0 0 4px #f97316aa)' : undefined;
+  const labelColor = selected ? '#f97316' : color;
 
+  // ── Shared label renderer ─────────────────────────────────────────────────
+  function renderLabel(x: number, y: number) {
+    if (!hasLabel && !isEditing) return null;
+
+    return (
+      <EdgeLabelRenderer>
+        <div
+          className="absolute pointer-events-none"
+          style={{ transform: `translate(-50%, -50%) translate(${x}px,${y}px)` }}
+        >
+          {isEditing ? (
+            <div className="pointer-events-auto flex flex-col items-center gap-1" style={{ minWidth: 90 }}>
+              <input
+                ref={inputRef}
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onKeyDown}
+                onBlur={commitEdit}
+                disabled={saving}
+                maxLength={200}
+                placeholder={displayLabel ?? 'Custom label…'}
+                className="text-[9px] font-semibold rounded border shadow-md bg-white outline-none px-1 py-0.5 w-28"
+                style={{ borderColor: labelColor, color: labelColor }}
+              />
+              {saveError && (
+                <span className="text-[8px] text-red-500 bg-white/90 rounded px-1 whitespace-nowrap pointer-events-none">
+                  {saveError}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span
+              className="pointer-events-auto px-1 py-0.5 text-[9px] font-semibold rounded border shadow-sm whitespace-nowrap select-none cursor-default"
+              style={{
+                background: selected ? '#fff7ed' : '#fffbeb',
+                borderColor: labelColor,
+                color: labelColor,
+                filter: glowFilter,
+              }}
+              onDoubleClick={openEditor}
+              title="Double-click to rename"
+            >
+              {displayLabel}
+            </span>
+          )}
+        </div>
+      </EdgeLabelRenderer>
+    );
+  }
+
+  // ── Marriage: double line ─────────────────────────────────────────────────
   if (isMarriage) {
-    const offset = hl === true ? 2 : 1.5;
+    const offset = selected ? 2.5 : hl === true ? 2 : 1.5;
     const [pathA] = getStraightPath({ sourceX: sourceX - offset, sourceY, targetX: targetX - offset, targetY });
     const [pathB] = getStraightPath({ sourceX: sourceX + offset, sourceY, targetX: targetX + offset, targetY });
     const midX = (sourceX + targetX) / 2;
@@ -79,29 +201,16 @@ function UnionEdgeComponent({
 
     return (
       <>
-        <g style={{ opacity, transition: 'opacity 0.25s' }}>
+        <g style={{ opacity, transition: 'opacity 0.25s', filter: glowFilter }}>
           <path d={pathA} stroke={color} strokeWidth={strokeW} fill="none" style={{ transition: 'stroke-width 0.25s' }} />
           <path d={pathB} stroke={color} strokeWidth={strokeW} fill="none" style={{ transition: 'stroke-width 0.25s' }} />
         </g>
-        {ordinalLabel && (
-          <EdgeLabelRenderer>
-            <div
-              className="absolute pointer-events-none"
-              style={{ transform: `translate(-50%, -50%) translate(${midX}px,${midY}px)` }}
-            >
-              <span
-                className="px-1 py-0.5 text-[9px] font-semibold rounded border shadow-sm whitespace-nowrap"
-                style={{ background: '#fffbeb', borderColor: color, color }}
-              >
-                {ordinalLabel}
-              </span>
-            </div>
-          </EdgeLabelRenderer>
-        )}
+        {renderLabel(midX, midY)}
       </>
     );
   }
 
+  // ── Other union types: single line ────────────────────────────────────────
   return (
     <>
       <path
@@ -111,23 +220,13 @@ function UnionEdgeComponent({
         strokeWidth={strokeW}
         strokeDasharray={isSolid ? undefined : dashArray}
         fill="none"
-        style={{ opacity, transition: 'stroke-width 0.25s, opacity 0.25s' }}
+        style={{
+          opacity,
+          transition: 'stroke-width 0.25s, opacity 0.25s',
+          filter: glowFilter,
+        }}
       />
-      {ordinalLabel && (
-        <EdgeLabelRenderer>
-          <div
-            className="absolute pointer-events-none"
-            style={{ transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)` }}
-          >
-            <span
-              className="px-1 py-0.5 text-[9px] font-semibold rounded border shadow-sm whitespace-nowrap"
-              style={{ background: '#fff', borderColor: color, color }}
-            >
-              {ordinalLabel}
-            </span>
-          </div>
-        </EdgeLabelRenderer>
-      )}
+      {renderLabel(labelX, labelY)}
     </>
   );
 }

@@ -11,7 +11,7 @@ import { useQuery } from '@tanstack/react-query';
 import { TreeCanvas, type TreeCanvasHandle } from '@features/tree/canvas/TreeCanvas';
 import { useThemeStore, THEME_PRESETS, PRESET_LABEL, type CanvasTheme } from '@store/theme.store';
 import { AVATAR_PRESETS, isPreset, presetDataUri } from '@features/tree/avatarPresets';
-import { useCanvasStore } from '@store/canvas.store';
+import { useCanvasStore, type SelectedEdge } from '@store/canvas.store';
 import { useAuthStore } from '@store/auth.store';
 import { queryKeys } from '@queries/keys';
 import type { ApiTreeGraph } from '@features/tree/types';
@@ -1788,6 +1788,144 @@ function PersonProfileModal({ initialPersonId, treeId, token, graph, onClose }: 
   );
 }
 
+// ── Edge selection panel (right drawer) ──────────────────────────────────
+
+const EDGE_UNION_LABEL: Record<string, string> = {
+  MARRIAGE: 'Marriage', PARTNERSHIP: 'Partnership',
+  COHABITATION: 'Cohabitation', UNKNOWN: 'Union',
+};
+const EDGE_PARENTAGE_LABEL: Record<string, string> = {
+  BIOLOGICAL: 'Biological', ADOPTIVE: 'Adoptive',
+  STEP: 'Step', FOSTER: 'Foster', UNKNOWN: 'Unknown',
+};
+
+interface EdgeSelectionPanelProps {
+  edge: SelectedEdge | null;
+  graph: ApiTreeGraph | null | undefined;
+  treeId: string;
+  token: string | null;
+  canWrite: boolean;
+  onClose: () => void;
+  onDeleted: () => void;
+}
+
+function EdgeSelectionPanel({ edge, graph, treeId, token, canWrite, onClose, onDeleted }: EdgeSelectionPanelProps) {
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [deleting,      setDeleting]      = React.useState(false);
+  const [deleteError,   setDeleteError]   = React.useState('');
+
+  if (!edge) return null;
+
+  const isUnion      = edge.kind === 'union';
+  const familyGroupId = isUnion ? edge.target : edge.source;
+  const personId      = isUnion ? edge.source : edge.target;
+
+  const resolveName = (pid: string) => {
+    const p = graph?.persons.find(pp => pp.id === pid);
+    return p ? [p.displayGivenName, p.displaySurname].filter(Boolean).join(' ') || '(unnamed)' : '(unknown)';
+  };
+
+  const personName  = resolveName(personId);
+  const fg          = graph?.familyGroups.find(f => f.id === familyGroupId);
+  const parentNames = (fg?.parentIds ?? []).map(resolveName);
+
+  const kindLabel = isUnion
+    ? (EDGE_UNION_LABEL[edge.unionType ?? 'UNKNOWN'] ?? 'Union')
+    : `${EDGE_PARENTAGE_LABEL[edge.parentageType ?? 'BIOLOGICAL'] ?? 'Biological'} Parent–Child`;
+  const subLabel  = isUnion ? `${kindLabel} link` : `${kindLabel} link`;
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await fetch(
+        `${API_BASE}/trees/${treeId}/family-groups/${familyGroupId}/members/${personId}`,
+        { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include' },
+      );
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error((d as any).detail ?? 'Failed to remove');
+      }
+      onDeleted();
+    } catch (err: any) {
+      setDeleteError(err.message);
+      setDeleting(false);
+    }
+  }
+
+  const onlyParent = isUnion && (fg?.parentIds ?? []).length <= 1;
+
+  return (
+    <div className="absolute top-0 right-0 h-full w-72 bg-white border-l border-slate-200 shadow-xl z-20 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <div className="min-w-0">
+          <span className="text-sm font-semibold text-slate-700">Relationship</span>
+          <p className="text-xs text-slate-400 mt-0.5 truncate">{subLabel}</p>
+        </div>
+        <button onClick={onClose} className="ml-2 w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400">✕</button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="space-y-3">
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-1.5 text-sm">
+            <div className="flex items-center gap-2 text-slate-700">
+              <span>{isUnion ? '👤' : '👶'}</span>
+              <span className="font-medium">{personName}</span>
+            </div>
+            {parentNames.length > 0 && (
+              <div className="flex items-start gap-2 text-xs text-slate-500">
+                <span className="mt-0.5">{isUnion ? '🔗' : '👨‍👩'}</span>
+                <span>{isUnion ? `Family with ${parentNames.join(' & ')}` : `Child of ${parentNames.join(' & ')}`}</span>
+              </div>
+            )}
+          </div>
+
+          {canWrite && (
+            <>
+              <div className="pt-1 border-t border-slate-100" />
+              {!confirmDelete ? (
+                <button
+                  onClick={() => { setDeleteError(''); setConfirmDelete(true); }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 rounded-lg hover:bg-red-50 border border-red-100"
+                >
+                  🗑 Remove this relationship
+                </button>
+              ) : (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+                  <p className="text-xs text-red-700 font-medium">
+                    {isUnion
+                      ? `Remove ${personName} from this union?`
+                      : `Remove ${personName} from this family?`}
+                  </p>
+                  {onlyParent && (
+                    <p className="text-xs text-red-500">Last parent — the family group will be deleted too.</p>
+                  )}
+                  {!isUnion && (
+                    <p className="text-xs text-slate-500">The person stays in the tree; only the parent–child link is removed.</p>
+                  )}
+                  {deleteError && <p className="text-xs text-red-600">{deleteError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setConfirmDelete(false); setDeleteError(''); }}
+                      disabled={deleting}
+                      className="flex-1 h-7 text-xs border border-slate-300 bg-white rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                    >Cancel</button>
+                    <button
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className="flex-1 h-7 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >{deleting ? 'Removing…' : 'Remove'}</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Selection panel (right drawer) ────────────────────────────────────────
 
 interface SelectionPanelProps {
@@ -2472,7 +2610,13 @@ export default function FamilyTreePage() {
   const resetCanvas      = useCanvasStore((s) => s.reset);
   const setFocusPerson   = useCanvasStore((s) => s.setFocusPersonId);
   const bumpLayoutReset  = useCanvasStore((s) => s.bumpLayoutReset);
+  const selectedEdge     = useCanvasStore((s) => s.selectedEdge);
   const accessToken      = useAuthStore((s) => s.accessToken);
+
+  // Close the person panel when an edge is selected, and vice-versa
+  useEffect(() => {
+    if (selectedEdge !== null) setPanelPersonId(null);
+  }, [selectedEdge]);
 
   useEffect(() => {
     if (treeId) setTreeId(treeId);
@@ -2507,6 +2651,7 @@ export default function FamilyTreePage() {
 
   const handlePersonSelect = useCallback((personId: string) => {
     setPanelPersonId(personId);
+    useCanvasStore.getState().setSelectedEdge(null);
   }, []);
 
   const handlePanelClose = useCallback(() => {
@@ -2670,6 +2815,20 @@ export default function FamilyTreePage() {
           onDeleted={() => { handlePanelClose(); handleAdded(); }}
           onOpenProfile={() => setShowProfile(true)}
           onEdit={() => setShowEdit(true)}
+        />
+
+        <EdgeSelectionPanel
+          key={selectedEdge?.id ?? '__no-edge__'}
+          edge={selectedEdge}
+          graph={graph}
+          treeId={treeId ?? ''}
+          token={accessToken}
+          canWrite={canWrite}
+          onClose={() => useCanvasStore.getState().setSelectedEdge(null)}
+          onDeleted={() => {
+            useCanvasStore.getState().setSelectedEdge(null);
+            handleAdded();
+          }}
         />
       </div>
 

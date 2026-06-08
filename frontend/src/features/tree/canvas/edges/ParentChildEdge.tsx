@@ -36,6 +36,7 @@ function ParentChildEdgeComponent({
   targetPosition,
   data,
   markerEnd,
+  selected,
 }: EdgeProps<ParentChildEdgeData>) {
   const theme         = useThemeStore((s) => s.theme);
   const parentageType = data?.parentageType ?? 'BIOLOGICAL';
@@ -47,7 +48,10 @@ function ParentChildEdgeComponent({
   // true  = on the ancestor path (highlighted)
   // false = a selection is active but this edge is NOT on the path (dimmed)
   const hl      = data?.isHighlighted;
-  const opacity = hl === true ? 1 : hl === false ? 0.15 : 1;
+  const opacity = selected ? 1 : hl === true ? 1 : hl === false ? 0.15 : 1;
+
+  const strokeColor = selected ? '#f97316' : hl === true ? theme.edgeHighlight : theme.edgeColor;
+  const strokeWidth = selected ? theme.edgeWidth * 3 : hl === true ? theme.edgeWidth * 2 : theme.edgeWidth;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -66,11 +70,12 @@ function ParentChildEdgeComponent({
         path={edgePath}
         markerEnd={markerEnd}
         style={{
-          stroke: hl === true ? theme.edgeHighlight : theme.edgeColor,
-          strokeWidth: hl === true ? theme.edgeWidth * 2 : theme.edgeWidth,
+          stroke: strokeColor,
+          strokeWidth,
           strokeDasharray: isSolid ? undefined : dashArray,
           opacity,
           transition: 'stroke 0.25s, stroke-width 0.25s, opacity 0.25s',
+          filter: selected ? 'drop-shadow(0 0 4px #f97316aa)' : undefined,
         }}
       />
 

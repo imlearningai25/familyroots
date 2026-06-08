@@ -11,6 +11,9 @@
  * When [details▾] is clicked an overlay panel appears directly below the card
  * showing full birth/death dates and social profile links.  The panel is
  * positioned absolutely so the layout algorithm is never affected.
+ *
+ * PDF mode (isPdfMode=true): expand buttons and details toggle are hidden;
+ * given name and surname are each shown on their own line with no truncation.
  */
 
 import React, { memo, useCallback, useState } from 'react';
@@ -120,7 +123,6 @@ interface DetailsPanelProps {
 function DetailsPanel({ data, borderColor, bg, textColor, subtextColor, borderCss }: DetailsPanelProps) {
   const rows: DetailsRow[] = [];
 
-  // Birth
   if (data.birthDate || data.birthYear) {
     rows.push({
       icon: <span style={{ color: '#22c55e' }}>●</span>,
@@ -129,7 +131,6 @@ function DetailsPanel({ data, borderColor, bg, textColor, subtextColor, borderCs
     });
   }
 
-  // Death
   if (data.isDeceased || data.deathDate || data.deathYear) {
     rows.push({
       icon: <span style={{ color: subtextColor }}>✝</span>,
@@ -142,7 +143,6 @@ function DetailsPanel({ data, borderColor, bg, textColor, subtextColor, borderCs
     });
   }
 
-  // Social handles
   if (data.facebookHandle) {
     rows.push({
       icon: <span style={{ color: '#1877f2', fontWeight: 700, fontSize: 11 }}>f</span>,
@@ -243,6 +243,7 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
 
   const toggleExpand  = useCanvasStore((s) => s.toggleExpand);
   const setSelected   = useCanvasStore((s) => s.setSelectedPersonId);
+  const isPdfMode     = useCanvasStore((s) => s.isPdfMode);
   const theme         = useThemeStore((s) => s.theme);
   const [hovered,     setHovered]     = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -273,7 +274,74 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
     : (hovered ? theme.nodeHoverBg : theme.nodeBg);
   const fullName = [displayGivenName, displaySurname].filter(Boolean).join(' ') || 'Unknown';
   const years = formatYears(birthYear, deathYear, isLiving && !isDeceased);
+  const borderCss = selected ? borderColor : isFocus ? borderColor : theme.nodeBorder;
 
+  // ── PDF mode: full names on two lines, no interactive chrome ─────────────
+  if (isPdfMode) {
+    return (
+      <>
+        <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none" />
+        <div style={{ width: PERSON_NODE_WIDTH, position: 'relative' }}>
+          <div
+            style={{
+              width: PERSON_NODE_WIDTH,
+              minHeight: PERSON_NODE_HEIGHT,
+              position: 'relative',
+            }}
+          >
+            <div
+              className="w-full rounded-xl flex items-center gap-3 px-3 py-3"
+              style={{
+                minHeight: PERSON_NODE_HEIGHT,
+                background: cardBg,
+                border: `2px solid ${borderCss}`,
+                boxShadow: isFocus ? `0 0 0 2px ${borderColor}44` : '0 1px 3px rgba(0,0,0,0.08)',
+              }}
+            >
+              {/* Left accent bar */}
+              <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r" style={{ background: borderColor }} />
+
+              <Avatar photoUrl={photoUrl} givenName={displayGivenName} surname={displaySurname} sex={sex} size={40} />
+
+              {/* Name section — two lines, no truncation */}
+              <div className="flex-1 min-w-0">
+                {displayGivenName && (
+                  <div
+                    className="font-semibold leading-snug"
+                    style={{ color: theme.nodeText, fontSize: 13, wordBreak: 'break-word' }}
+                  >
+                    {displayGivenName}
+                  </div>
+                )}
+                {displaySurname && (
+                  <div
+                    className="font-semibold leading-snug"
+                    style={{ color: theme.nodeText, fontSize: 13, wordBreak: 'break-word' }}
+                  >
+                    {displaySurname}
+                  </div>
+                )}
+                {!displayGivenName && !displaySurname && (
+                  <div className="font-semibold text-sm leading-tight" style={{ color: theme.nodeText }}>
+                    Unknown
+                  </div>
+                )}
+                {years && (
+                  <div className="text-xs mt-0.5" style={{ color: theme.nodeSubtext }}>{years}</div>
+                )}
+                {isDeceased && (
+                  <div className="text-[10px] mt-0.5" style={{ color: theme.nodeSubtext }}>✝ Deceased</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        <Handle type="source" position={Position.Bottom} className="!opacity-0 !pointer-events-none" />
+      </>
+    );
+  }
+
+  // ── Normal interactive mode ────────────────────────────────────────────────
   return (
     <>
       <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none" />
@@ -365,7 +433,7 @@ function PersonNodeComponent({ data, selected, dragging }: NodeProps<PersonNodeD
           <div
             style={{
               position: 'absolute',
-              top: PERSON_NODE_HEIGHT - 2, // overlap the card border by 2 px
+              top: PERSON_NODE_HEIGHT - 2,
               left: 0,
               width: PERSON_NODE_WIDTH,
               zIndex: 1000,

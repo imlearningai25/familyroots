@@ -220,6 +220,7 @@ function applyLayout(
       positions = familyTreeLayout(filteredGraph, {
         nodeHGap: opts.nodeHGap,
         nodeVGap: opts.nodeVGap,
+        alignByBirthYear: true,
       });
       break;
     }

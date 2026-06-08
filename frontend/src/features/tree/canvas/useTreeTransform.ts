@@ -150,7 +150,7 @@ export function transformGraphToFlow(
         source: parentId,
         target: fg.id,
         type: 'union' as const,
-        data: { kind: 'union', unionType: fg.unionType, unionOrdinal },
+        data: { kind: 'union', unionType: fg.unionType, unionOrdinal, customLabel: fg.customLabel },
         animated: false,
       } as TreeEdge);
     }

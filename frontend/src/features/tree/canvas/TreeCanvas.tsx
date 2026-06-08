@@ -19,6 +19,7 @@ import ReactFlow, {
   type NodeTypes,
   type EdgeTypes,
   type NodeMouseHandler,
+  type EdgeMouseHandler,
   type OnMove,
   type OnNodesChange,
   applyNodeChanges,
@@ -38,7 +39,7 @@ import { useExpandCollapse } from './useExpandCollapse';
 import { ancestorSubgraphIds, descendantSubgraphIds } from './algorithms/ancestorChart';
 import { useCanvasStore } from '@store/canvas.store';
 import { useThemeStore } from '@store/theme.store';
-import type { ApiTreeGraph, TreeNode, PersonNodeData } from '../types';
+import type { ApiTreeGraph, TreeNode, TreeEdge, PersonNodeData } from '../types';
 import { DEFAULT_LAYOUT_OPTIONS } from '../types';
 
 // ── Ctrl+drag helper ───────────────────────────────────────────────────────
@@ -250,6 +251,7 @@ function DraggableLegend({ children }: { children: React.ReactNode }) {
   return (
     <div
       ref={selfRef}
+      data-pdf-legend
       className="cursor-grab active:cursor-grabbing"
       style={{ position: 'absolute', zIndex: 10, userSelect: 'none', ...posStyle }}
       onMouseDown={handleMouseDown}
@@ -369,9 +371,12 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
   const focusPersonId       = useCanvasStore((s) => s.focusPersonId);
   const selectedPersonId    = useCanvasStore((s) => s.selectedPersonId);
   const setSelectedPersonId = useCanvasStore((s) => s.setSelectedPersonId);
+  const selectedEdge        = useCanvasStore((s) => s.selectedEdge);
+  const setSelectedEdge     = useCanvasStore((s) => s.setSelectedEdge);
   const setZoom             = useCanvasStore((s) => s.setZoom);
   const setPan              = useCanvasStore((s) => s.setPan);
   const layoutResetKey      = useCanvasStore((s) => s.layoutResetKey);
+  const isPdfMode           = useCanvasStore((s) => s.isPdfMode);
 
   const {
     expandedNodeIds,
@@ -414,16 +419,26 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
   const { nodes: layoutNodes, edges: rawEdges } = useTreeLayout(graph, expandedNodeIds, layoutOpts);
 
-  // Highlight ancestor path when a person is selected; dim all other edges
-  const edges = useMemo(() => {
-    if (!selectedPersonId || !graph) return rawEdges;
-    const lineageIds = computeLineageEdgeIds(graph, selectedPersonId);
-    if (lineageIds.size === 0) return rawEdges;
-    return rawEdges.map((e) => ({
-      ...e,
-      data: { ...e.data, isHighlighted: lineageIds.has(e.id) },
-    }));
-  }, [rawEdges, selectedPersonId, graph]);
+  // Highlight ancestor path when a person is selected; dim all other edges.
+  // Also mark the currently selected edge so it renders with a selection style.
+  const edges = useMemo((): TreeEdge[] => {
+    let result: TreeEdge[] = rawEdges;
+    if (selectedPersonId && graph) {
+      const lineageIds = computeLineageEdgeIds(graph, selectedPersonId);
+      if (lineageIds.size > 0) {
+        result = result.map((e) => ({
+          ...e,
+          data: { ...e.data, isHighlighted: lineageIds.has(e.id) },
+        })) as TreeEdge[];
+      }
+    }
+    if (selectedEdge) {
+      result = result.map((e) =>
+        e.id === selectedEdge.id ? { ...e, selected: true } : e
+      );
+    }
+    return result;
+  }, [rawEdges, selectedPersonId, selectedEdge, graph]);
 
   const [displayNodes, setDisplayNodes] = useState<TreeNode[]>([]);
   const prevLayoutKey = useRef('');
@@ -446,17 +461,136 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
     },
     exportPdf: async () => {
       if (!containerRef.current) return;
-      const { toPng }         = await import('html-to-image');
+      const { toPng }          = await import('html-to-image');
       const { default: jsPDF } = await import('jspdf');
-      const dataUrl = await toPng(containerRef.current, { pixelRatio: 2, cacheBust: true });
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise<void>((r) => { img.onload = () => r(); });
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h] });
-      pdf.addImage(dataUrl, 'PNG', 0, 0, w, h);
-      pdf.save('family-tree.pdf');
+
+      const { layoutMode, focusPersonId, zoom, pan } = useCanvasStore.getState();
+
+      // ── 1. Build title + filename ────────────────────────────────────────
+      const focusPerson = graph?.persons.find((p) => p.id === focusPersonId);
+      const focusName   = focusPerson
+        ? [focusPerson.displayGivenName, focusPerson.displaySurname].filter(Boolean).join(' ')
+        : '';
+      const treeName = (graph as any)?.treeName ?? 'Family Tree';
+
+      const PDF_TITLES: Record<LayoutMode, string> = {
+        compact:             treeName,
+        vertical:            treeName,
+        horizontal:          treeName,
+        fan:                 focusName ? `Fan Chart — ${focusName}` : 'Fan Chart',
+        'ancestry-fan':      focusName ? `Ancestry Fan — ${focusName}` : 'Ancestry Fan',
+        ancestor:            focusName ? `Ancestors of ${focusName}` : 'Ancestor Chart',
+        descendant:          focusName ? `Descendants of ${focusName}` : 'Descendant Chart',
+        'descendant-family': focusName ? `Descendants of ${focusName}` : 'Descendants + Spouses',
+        'ancestor-family':   focusName ? `Ancestors of ${focusName}` : 'Ancestors + Spouses',
+        pedigree:            focusName ? `Pedigree — ${focusName}` : 'Pedigree Chart',
+      };
+      const title    = PDF_TITLES[layoutMode] ?? treeName;
+      const filename = title.replace(/[^\w\s\-]/g, '').replace(/\s+/g, '_') + '.pdf';
+
+      const container = containerRef.current;
+      const canvasW   = container.clientWidth;
+      const canvasH   = container.clientHeight;
+
+      // ── 2. Find emptiest quadrant for legend placement ───────────────────
+      const quadCounts = { TL: 0, TR: 0, BL: 0, BR: 0 };
+      for (const node of displayNodes) {
+        if (node.type !== 'person') continue;
+        const vx = node.position.x * zoom + pan.x;
+        const vy = node.position.y * zoom + pan.y;
+        if      (vx <  canvasW / 2 && vy <  canvasH / 2) quadCounts.TL++;
+        else if (vx >= canvasW / 2 && vy <  canvasH / 2) quadCounts.TR++;
+        else if (vx <  canvasW / 2 && vy >= canvasH / 2) quadCounts.BL++;
+        else                                              quadCounts.BR++;
+      }
+      const emptiest = (Object.entries(quadCounts) as [string, number][])
+        .sort((a, b) => a[1] - b[1])[0][0] as 'TL' | 'TR' | 'BL' | 'BR';
+      const LM = 16;
+      const legendPositions = {
+        TL: { left: `${LM}px`, top: `${LM}px`,  right: 'auto', bottom: 'auto' },
+        TR: { right: `${LM}px`, top: `${LM}px`, left: 'auto',  bottom: 'auto' },
+        BL: { left: `${LM}px`, bottom: `${LM}px`, right: 'auto', top: 'auto' },
+        BR: { right: `${LM}px`, bottom: `${LM}px`, left: 'auto', top: 'auto' },
+      };
+      const lPos = legendPositions[emptiest];
+
+      // Reposition legend via DOM — no React re-render needed
+      const legendEl     = container.querySelector('[data-pdf-legend]') as HTMLElement | null;
+      const savedLegend  = legendEl?.style.cssText ?? '';
+      if (legendEl) Object.assign(legendEl.style, lPos);
+
+      // Hide React Flow chrome (attribution link / "↙" arrow)
+      const attributionEl = container.querySelector('.react-flow__attribution') as HTMLElement | null;
+      if (attributionEl) attributionEl.style.visibility = 'hidden';
+
+      // ── 3. Switch to PDF render mode + capture ───────────────────────────
+      // Zustand setState is synchronous; two rAF ticks let React flush + paint.
+      useCanvasStore.getState().setIsPdfMode(true);
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+
+      let treeDataUrl: string;
+      try {
+        treeDataUrl = await toPng(container, { pixelRatio: 2, cacheBust: true });
+      } finally {
+        useCanvasStore.getState().setIsPdfMode(false);
+        if (legendEl)     legendEl.style.cssText = savedLegend;
+        if (attributionEl) attributionEl.style.visibility = '';
+      }
+
+      // ── 4. Build header strip (canvas API — pixel-perfect, no overlap) ───
+      const pixelRatio  = 2;
+      const HEADER_PX   = 60; // header height in canvas pixels
+      const headerImgW  = Math.round(canvasW * pixelRatio);
+      const headerImgH  = Math.round(HEADER_PX * pixelRatio);
+
+      const hCanvas = document.createElement('canvas');
+      hCanvas.width  = headerImgW;
+      hCanvas.height = headerImgH;
+      const ctx = hCanvas.getContext('2d')!;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, headerImgW, headerImgH);
+
+      // Title — shrink font until it fits
+      let fontSize = 22 * pixelRatio;
+      ctx.font = `700 ${fontSize}px system-ui,-apple-system,sans-serif`;
+      const maxTextW = headerImgW - 80 * pixelRatio;
+      while (ctx.measureText(title).width > maxTextW && fontSize > 10 * pixelRatio) {
+        fontSize -= pixelRatio;
+        ctx.font = `700 ${fontSize}px system-ui,-apple-system,sans-serif`;
+      }
+      ctx.fillStyle   = '#1e293b';
+      ctx.textAlign   = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(title, headerImgW / 2, headerImgH / 2);
+
+      // Thin bottom separator
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth   = pixelRatio;
+      ctx.beginPath();
+      ctx.moveTo(30 * pixelRatio, headerImgH - 1);
+      ctx.lineTo(headerImgW - 30 * pixelRatio, headerImgH - 1);
+      ctx.stroke();
+
+      const headerDataUrl = hCanvas.toDataURL('image/png');
+
+      // ── 5. Assemble PDF ──────────────────────────────────────────────────
+      const treeImg = new Image();
+      treeImg.src = treeDataUrl;
+      await new Promise<void>((r) => { treeImg.onload = () => r(); });
+
+      const totalW = treeImg.naturalWidth;
+      const totalH = treeImg.naturalHeight + headerImgH;
+
+      const pdf = new jsPDF({
+        orientation: totalW >= totalH ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [totalW, totalH],
+      });
+      pdf.addImage(headerDataUrl, 'PNG', 0, 0,           totalW, headerImgH);
+      pdf.addImage(treeDataUrl,   'PNG', 0, headerImgH,  totalW, treeImg.naturalHeight);
+      pdf.save(filename);
     },
   }), [displayNodes, fitView]);
 
@@ -505,6 +639,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
+      setSelectedEdge(null);
       if (node.type === 'person') {
         setSelectedPersonId(node.id);
         onPersonSelect?.(node.id);
@@ -512,10 +647,29 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
         onFamilyGroupSelect?.(node.id);
       }
     },
-    [setSelectedPersonId, onPersonSelect, onFamilyGroupSelect]
+    [setSelectedPersonId, setSelectedEdge, onPersonSelect, onFamilyGroupSelect]
   );
 
-  const onPaneClick = useCallback(() => setSelectedPersonId(null), [setSelectedPersonId]);
+  const onEdgeClick: EdgeMouseHandler = useCallback(
+    (_, edge) => {
+      if (!edge.data) return;
+      setSelectedPersonId(null);
+      setSelectedEdge({
+        id: edge.id,
+        kind: edge.data.kind,
+        source: edge.source,
+        target: edge.target,
+        unionType: edge.data.unionType,
+        parentageType: edge.data.parentageType,
+      });
+    },
+    [setSelectedPersonId, setSelectedEdge]
+  );
+
+  const onPaneClick = useCallback(() => {
+    setSelectedPersonId(null);
+    setSelectedEdge(null);
+  }, [setSelectedPersonId, setSelectedEdge]);
 
   const onMoveEnd: OnMove = useCallback(
     (_, viewport) => {
@@ -685,7 +839,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
 
   return (
     <div ref={containerRef} className="w-full h-full relative" style={{ background: canvasTheme.canvasBg }}>
-      {(ctrlDragActive || ctrlHeld) && (
+      {!isPdfMode && (ctrlDragActive || ctrlHeld) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-brand-600 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg pointer-events-none select-none">
           {ctrlDragActive
             ? 'Ctrl drag · moving with descendants'
@@ -699,6 +853,7 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
         edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
         onMoveEnd={onMoveEnd}
         onNodeDragStart={onNodeDragStart}
@@ -718,29 +873,35 @@ function TreeCanvasInner({ graph, isLoading, onPersonSelect, onFamilyGroupSelect
         selectNodesOnDrag={false}
         elevateNodesOnSelect
         nodesFocusable
-        edgesFocusable={false}
+        edgesFocusable
         nodesDraggable
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color={canvasTheme.canvasDot} />
 
-        <MiniMap
-          nodeColor={miniMapNodeColor}
-          nodeStrokeWidth={0}
-          maskColor="rgba(248,250,252,0.7)"
-          className="!bottom-4 !right-4 !rounded-xl !border !border-slate-200 !shadow-card"
-          pannable
-          zoomable
-        />
+        {!isPdfMode && (
+          <MiniMap
+            nodeColor={miniMapNodeColor}
+            nodeStrokeWidth={0}
+            maskColor="rgba(248,250,252,0.7)"
+            className="!bottom-4 !right-4 !rounded-xl !border !border-slate-200 !shadow-card"
+            pannable
+            zoomable
+          />
+        )}
 
-        <TreeControls
-          graph={graph}
-          onExpandAll={handleExpandAll}
-          onCollapseAll={handleCollapseAll}
-        />
+        {!isPdfMode && (
+          <TreeControls
+            graph={graph}
+            onExpandAll={handleExpandAll}
+            onCollapseAll={handleCollapseAll}
+          />
+        )}
 
-        <div className="absolute bottom-4 left-4 z-10 text-xs text-slate-400 bg-white/80 px-2 py-1 rounded-lg border border-slate-200">
-          {graph.persons.length} people · {displayNodes.filter((n) => n.type === 'person').length} visible
-        </div>
+        {!isPdfMode && (
+          <div className="absolute bottom-4 left-4 z-10 text-xs text-slate-400 bg-white/80 px-2 py-1 rounded-lg border border-slate-200">
+            {graph.persons.length} people · {displayNodes.filter((n) => n.type === 'person').length} visible
+          </div>
+        )}
       </ReactFlow>
 
       {/* Draggable legend — outside ReactFlow so it stays viewport-fixed

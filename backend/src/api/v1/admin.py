@@ -403,7 +403,7 @@ async def list_tree_persons_admin(
 ) -> list[dict]:
     from sqlalchemy import text
     rows = (await session.execute(text("""
-        SELECT id, display_given_name, display_surname, photo_url
+        SELECT id, display_given_name, display_surname, photo_url, birth_year, sex
         FROM persons
         WHERE tree_id = :tid AND tenant_id = :tenant AND is_deleted = false
         ORDER BY display_surname, display_given_name
@@ -414,6 +414,8 @@ async def list_tree_persons_admin(
             "display_given_name": r.display_given_name or "",
             "display_surname": r.display_surname or "",
             "photo_url": r.photo_url,
+            "birth_year": r.birth_year,
+            "sex": r.sex or "UNKNOWN",
         }
         for r in rows
     ]
