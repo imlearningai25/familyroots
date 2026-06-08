@@ -23,13 +23,16 @@ export type UnionType =
   | 'UNKNOWN';
 
 export type LayoutMode =
-  | 'vertical'      // dagre TB — top-to-bottom generations
-  | 'horizontal'    // dagre LR — left-to-right
-  | 'ancestor'      // ancestors of focus person going up
-  | 'descendant'    // descendants of focus person going down
-  | 'fan'           // polar fan chart — semicircle (180°)
-  | 'ancestry-fan'  // ancestry fan chart — full circle (360°)
-  | 'pedigree';     // horizontal binary ancestor tree (focus left, ancestors right)
+  | 'compact'            // dagre TB — compact top-to-bottom, groups related members together
+  | 'vertical'           // familyTree algorithm — multi-marriage aware generational layout
+  | 'horizontal'         // dagre LR — left-to-right
+  | 'ancestor'           // ancestors of focus person going up
+  | 'descendant'         // descendants of focus person going down
+  | 'descendant-family'  // descendants with spouses — couples shown together going down
+  | 'ancestor-family'    // ancestors with spouses — couples shown together going up
+  | 'fan'                // polar fan chart — semicircle (180°)
+  | 'ancestry-fan'       // ancestry fan chart — full circle (360°)
+  | 'pedigree';          // horizontal binary ancestor tree (focus left, ancestors right)
 
 // ── Node data types ────────────────────────────────────────────────────────
 
@@ -96,6 +99,8 @@ export interface UnionEdgeData {
   kind: 'union';
   unionType: UnionType;
   isHighlighted?: boolean;
+  /** 1-based ordinal when this person has multiple unions of the same type (e.g. 2 → "2nd Marriage") */
+  unionOrdinal?: number;
 }
 
 /** Edge from a FamilyGroup to a Person (as a child member) */

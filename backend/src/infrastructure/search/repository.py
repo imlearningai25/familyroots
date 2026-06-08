@@ -542,6 +542,7 @@ class SearchRepository:
             for pid in path_ids
         ]
 
+        edge_labels = _compute_edge_labels(path_ids, person_to_fgs)
         relationship_label = _infer_specific_label(path_ids, person_to_fgs)
 
         # For a 1st cousin, also surface the culturally-common in-law alias
@@ -562,6 +563,7 @@ class SearchRepository:
             path=path_steps,
             relationship_label=relationship_label,
             alternative_label=alternative_label,
+            edge_labels=edge_labels,
         )
 
     # ── 5. All relatives (bidirectional BFS) ──────────────────────────────────
@@ -717,6 +719,44 @@ def _degree_to_label(distance: int) -> str:
         6: "2nd cousin once removed",
     }
     return labels.get(distance, f"Distant relative ({distance} steps)")
+
+
+def _compute_edge_labels(
+    path_ids: list[str],
+    person_to_fgs: dict[str, list[tuple[str, str]]],
+) -> list[str]:
+    """Return a label for each consecutive pair in path_ids.
+
+    Labels: "parent" | "child" | "spouse" | "sibling" | "relative"
+    From A's perspective going to B:
+      - "child"   = B is A's child
+      - "parent"  = B is A's parent
+      - "spouse"  = B is A's co-parent (partner)
+      - "sibling" = both A and B are children of the same family group
+    """
+    labels: list[str] = []
+    for i in range(len(path_ids) - 1):
+        a, b = path_ids[i], path_ids[i + 1]
+        fgs_a = {fg_id: role for fg_id, role in person_to_fgs.get(a, [])}
+        fgs_b = {fg_id: role for fg_id, role in person_to_fgs.get(b, [])}
+        shared = set(fgs_a.keys()) & set(fgs_b.keys())
+        label = "relative"
+        for fg_id in shared:
+            ra, rb = fgs_a[fg_id], fgs_b[fg_id]
+            if ra == "parent" and rb == "child":
+                label = "child"
+                break
+            elif ra == "child" and rb == "parent":
+                label = "parent"
+                break
+            elif ra == "parent" and rb == "parent":
+                label = "spouse"
+                break
+            elif ra == "child" and rb == "child":
+                label = "sibling"
+                break
+        labels.append(label)
+    return labels
 
 
 def _infer_specific_label(

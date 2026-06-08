@@ -141,6 +141,7 @@ class TreeSummaryResponse(BaseModel):
     name: str
     description: Optional[str]
     cover_emoji: Optional[str] = None
+    cover_image_url: Optional[str] = None
     role: TreeRole
     person_count: int
     member_count: int
@@ -271,7 +272,7 @@ async def update_tree(
             SET name = :name, description = :description,
                 cover_emoji = COALESCE(:cover_emoji, cover_emoji)
             WHERE id = :tid AND is_deleted = false
-            RETURNING id, name, description, cover_emoji
+            RETURNING id, name, description, cover_emoji, cover_image_url
         """),
         {"tid": tree_id, "name": body.name, "description": body.description,
          "cover_emoji": body.cover_emoji},
@@ -320,10 +321,108 @@ async def update_tree(
         name=row.name,
         description=row.description,
         cover_emoji=row.cover_emoji,
+        cover_image_url=row.cover_image_url,
         role=effective_role,
         person_count=counts.person_count if counts else 0,
         member_count=counts.member_count if counts else 0,
     )
+
+
+_TREE_PHOTO_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+_TREE_PHOTO_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post("/trees/{tree_id}/photo", summary="Upload a cover photo for a tree")
+async def upload_tree_photo(
+    tree_id: uuid.UUID,
+    file: UploadFile = File(...),
+    current_user: NotAuditorDep = None,
+    uow: UoWDep = None,
+) -> dict:
+    import boto3
+    from botocore.config import Config as BotoCfg
+    from sqlalchemy import text
+    from src.config import get_settings
+
+    if current_user.app_role != AppRole.ADMIN:
+        row = (await uow._session.execute(
+            text("SELECT role FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"),
+            {"tid": tree_id, "uid": current_user.id},
+        )).first()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Tree not found")
+        if row.role not in ("OWNER", "ADMIN"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and admins can update this tree")
+
+    if file.content_type not in _TREE_PHOTO_ALLOWED_TYPES:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Only JPEG, PNG, WEBP or GIF images are allowed")
+
+    data = await file.read()
+    if len(data) > _TREE_PHOTO_MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "File exceeds 10 MB limit")
+
+    settings = get_settings()
+    ext = (file.filename or "photo").rsplit(".", 1)[-1].lower()
+    key = f"tenants/{current_user.tenant_id}/trees/{tree_id}/cover/{uuid.uuid4()}.{ext}"
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url or None,
+        aws_access_key_id=settings.aws_access_key_id or "minioadmin",
+        aws_secret_access_key=settings.aws_secret_access_key or "minioadmin",
+        region_name=settings.aws_region,
+        config=BotoCfg(signature_version="s3v4"),
+    )
+    bucket = settings.s3_bucket or "familyroots-local"
+    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=file.content_type)
+
+    public_base = (settings.s3_public_url or settings.s3_endpoint_url or "").rstrip("/")
+    photo_url = f"{public_base}/{bucket}/{key}" if public_base else f"/{bucket}/{key}"
+
+    result = await uow._session.execute(
+        text("""
+            UPDATE family_trees SET cover_image_url = :url
+            WHERE id = :tid AND tenant_id = :tenant AND is_deleted = false
+            RETURNING id
+        """),
+        {"url": photo_url, "tid": tree_id, "tenant": current_user.tenant_id},
+    )
+    if result.first() is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tree not found")
+
+    await uow._session.commit()
+    return {"cover_image_url": photo_url}
+
+
+@router.delete(
+    "/trees/{tree_id}/photo",
+    status_code=204,
+    response_model=None,
+    response_class=Response,
+    summary="Remove a tree's cover photo",
+)
+async def delete_tree_photo(
+    tree_id: uuid.UUID,
+    current_user: NotAuditorDep,
+    uow: UoWDep,
+) -> None:
+    from sqlalchemy import text
+
+    if current_user.app_role != AppRole.ADMIN:
+        row = (await uow._session.execute(
+            text("SELECT role FROM tree_members WHERE tree_id = :tid AND user_id = :uid LIMIT 1"),
+            {"tid": tree_id, "uid": current_user.id},
+        )).first()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Tree not found")
+        if row.role not in ("OWNER", "ADMIN"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only owners and admins can update this tree")
+
+    await uow._session.execute(
+        text("UPDATE family_trees SET cover_image_url = NULL WHERE id = :tid AND tenant_id = :tenant AND is_deleted = false"),
+        {"tid": tree_id, "tenant": current_user.tenant_id},
+    )
+    await uow._session.commit()
 
 
 @router.get(
@@ -540,6 +639,7 @@ async def list_my_trees(
                 ft.name,
                 ft.description,
                 ft.cover_emoji,
+                ft.cover_image_url,
                 (SELECT COUNT(*) FROM persons p WHERE p.tree_id = ft.id AND p.is_deleted = false) AS person_count,
                 (SELECT COUNT(*) FROM tree_members m WHERE m.tree_id = ft.id) AS member_count
             FROM family_trees ft
@@ -554,6 +654,7 @@ async def list_my_trees(
                 name=row.name,
                 description=row.description,
                 cover_emoji=row.cover_emoji,
+                cover_image_url=row.cover_image_url,
                 role=TreeRole(effective_role),
                 person_count=row.person_count,
                 member_count=row.member_count,
@@ -568,6 +669,7 @@ async def list_my_trees(
             ft.name,
             ft.description,
             ft.cover_emoji,
+            ft.cover_image_url,
             tm.role,
             (SELECT COUNT(*) FROM persons p WHERE p.tree_id = ft.id AND p.is_deleted = false) AS person_count,
             (SELECT COUNT(*) FROM tree_members m WHERE m.tree_id = ft.id) AS member_count
@@ -585,6 +687,7 @@ async def list_my_trees(
             name=row.name,
             description=row.description,
             cover_emoji=row.cover_emoji,
+            cover_image_url=row.cover_image_url,
             role=TreeRole(row.role),
             person_count=row.person_count,
             member_count=row.member_count,
@@ -699,6 +802,11 @@ async def get_tree_graph(
 
 # ── Import tree (.frt) ─────────────────────────────────────────────────────────
 
+_VALID_SEX = {"MALE", "FEMALE", "OTHER", "UNKNOWN"}
+_VALID_UNION_TYPES = {"MARRIAGE", "PARTNERSHIP", "COHABITATION", "UNKNOWN"}
+_VALID_PARENTAGE_TYPES = {"BIOLOGICAL", "ADOPTIVE", "STEP", "FOSTER", "UNKNOWN"}
+
+
 class _FrtPerson(BaseModel):
     id: str
     display_given_name: str = ""
@@ -791,7 +899,7 @@ async def import_tree(
             "tid":     new_tree_id,
             "given":   p.display_given_name,
             "surname": p.display_surname,
-            "sex":     p.sex,
+            "sex":     p.sex if p.sex in _VALID_SEX else "UNKNOWN",
             "living":  p.is_living,
             "deceased": p.is_deceased,
         })
@@ -810,7 +918,7 @@ async def import_tree(
             "id":     new_fg_id,
             "tenant": current_user.tenant_id,
             "tid":    new_tree_id,
-            "utype":  fg.union_type,
+            "utype":  fg.union_type if fg.union_type in _VALID_UNION_TYPES else "UNKNOWN",
             "p1":     p1,
             "p2":     p2,
         })
@@ -835,7 +943,8 @@ async def import_tree(
                   (id, tenant_id, tree_id, family_group_id, person_id, role, parentage_type)
                 VALUES (gen_random_uuid(), :tenant, :tid, :fgid, :pid, 'CHILD', :pt)
             """), {"tenant": current_user.tenant_id, "tid": new_tree_id,
-                   "fgid": new_fg_id, "pid": new_child_id, "pt": parentage})
+                   "fgid": new_fg_id, "pid": new_child_id,
+                   "pt": parentage if parentage in _VALID_PARENTAGE_TYPES else "UNKNOWN"})
 
     # Audit: log the import action on the new tree
     from src.domain.collaboration.entities import AuditEntry, Action, AuditEntityType
@@ -922,7 +1031,7 @@ async def import_tree_zip(
             "tid":     new_tree_id,
             "given":   p.get("display_given_name", ""),
             "surname": p.get("display_surname", ""),
-            "sex":     p.get("sex", "UNKNOWN"),
+            "sex":     p.get("sex", "UNKNOWN") if p.get("sex", "UNKNOWN") in _VALID_SEX else "UNKNOWN",
             "living":  p.get("is_living", True),
             "deceased": p.get("is_deceased", False),
         })
@@ -937,7 +1046,8 @@ async def import_tree_zip(
             INSERT INTO family_groups (id, tenant_id, tree_id, union_type, parent1_id, parent2_id)
             VALUES (:id, :tenant, :tid, :utype, :p1, :p2)
         """), {"id": new_fg_id, "tenant": current_user.tenant_id, "tid": new_tree_id,
-               "utype": fg.get("union_type", "UNKNOWN"), "p1": p1, "p2": p2})
+               "utype": fg.get("union_type", "UNKNOWN") if fg.get("union_type", "UNKNOWN") in _VALID_UNION_TYPES else "UNKNOWN",
+               "p1": p1, "p2": p2})
 
         for old_pid in fg.get("parent_ids", []):
             new_pid = old_to_new.get(old_pid)
@@ -959,7 +1069,8 @@ async def import_tree_zip(
                   (id, tenant_id, tree_id, family_group_id, person_id, role, parentage_type)
                 VALUES (gen_random_uuid(), :tenant, :tid, :fgid, :pid, 'CHILD', :pt)
             """), {"tenant": current_user.tenant_id, "tid": new_tree_id,
-                   "fgid": new_fg_id, "pid": new_child_id, "pt": parentage})
+                   "fgid": new_fg_id, "pid": new_child_id,
+                   "pt": parentage if parentage in _VALID_PARENTAGE_TYPES else "UNKNOWN"})
 
     await uow._session.commit()
 

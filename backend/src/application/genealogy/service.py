@@ -19,6 +19,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.genealogy.schemas import (
+    AddBothParentsRequest,
     AddChildRequest,
     AddParentRequest,
     AddSiblingRequest,
@@ -101,6 +102,26 @@ class FamilyTreeApplicationService:
         )
         await self._apply(result, tenant_id)
         log.info("genealogy.add_parent", child=str(child_id), parent=str(req.parent_id))
+
+    async def add_both_parents(
+        self,
+        tree_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        child_id: uuid.UUID,
+        req: AddBothParentsRequest,
+    ) -> None:
+        graph = await self._loader.load(tree_id, tenant_id)
+        result = self._domain_svc.add_both_parents(
+            graph, tree_id, tenant_id,
+            child_id=child_id,
+            father_id=req.father_id,
+            mother_id=req.mother_id,
+            parentage_type=req.parentage_type,
+            union_type=req.union_type,
+        )
+        await self._apply(result, tenant_id)
+        log.info("genealogy.add_both_parents",
+                 child=str(child_id), father=str(req.father_id), mother=str(req.mother_id))
 
     async def add_child(
         self,

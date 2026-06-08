@@ -144,32 +144,36 @@ export function familyTreeLayout(
   };
 
   // ── Phase 2: bottom-up subtree widths ────────────────────────────────────────
-  const wMemo = new Map<string, number>();
+  const wMemo       = new Map<string, number>();
+  const wInProgress = new Set<string>(); // cycle guard for mutual personW ↔ fgHalfW recursion
 
   function personW(id: string): number {
     const k = `p:${id}`;
     if (wMemo.has(k)) return wMemo.get(k)!;
-    const fgIds = personChildFGs.get(id) ?? [];
-    if (fgIds.length === 0) { wMemo.set(k, PW); return PW; }
+    // Break the cycle: personW(A) → fgHalfW(FG, A) → personW(spouse)
+    //                             → fgHalfW(FG, spouse) → personW(A) ← cycle
+    if (wInProgress.has(k)) return PW;
+    wInProgress.add(k);
 
-    if (fgIds.length === 1) {
-      // Single marriage: standard subtree width
-      const w = fgW(fgIds[0]);
-      wMemo.set(k, w);
-      return w;
+    const fgIds = personChildFGs.get(id) ?? [];
+    let w: number;
+
+    if (fgIds.length === 0) {
+      w = PW;
+    } else if (fgIds.length === 1) {
+      w = fgW(fgIds[0]);
+    } else {
+      // Multi-marriage: person sits between Sp1 (left) and Sp2..SpN (right).
+      // Width = leftHalf(FG1) + PW + rightHalves(FG2..FGn)
+      const leftW  = fgHalfW(fgIds[0], id, 'left');
+      const rightW = fgIds.slice(1).reduce(
+        (s, fgId, i) => s + (i > 0 ? sibGap : 0) + fgHalfW(fgId, id, 'right'),
+        0,
+      );
+      w = leftW + PW + rightW;
     }
 
-    // Multi-marriage: person sits between Sp1 (left) and Sp2..SpN (right).
-    // Width = leftHalf(FG1) + PW + rightHalves(FG2..FGn)
-    //
-    // leftHalf(FG1)  = the portion of FG1 that is LEFT of the anchor (Sp1 side)
-    // rightHalf(FGi) = the portion that is RIGHT of the anchor (SpN side)
-    const leftW  = fgHalfW(fgIds[0], id, 'left');
-    const rightW = fgIds.slice(1).reduce(
-      (s, fgId, i) => s + (i > 0 ? sibGap : 0) + fgHalfW(fgId, id, 'right'),
-      0,
-    );
-    const w = leftW + PW + rightW;
+    wInProgress.delete(k);
     wMemo.set(k, w);
     return w;
   }
@@ -375,34 +379,46 @@ export function familyTreeLayout(
       return minY(a) - minY(b);
     });
 
+  // Helper: rightmost placed x at a given generation (falls back to curX).
+  // Using this instead of fgW() prevents inflated estimates from pushing
+  // disconnected sub-trees far to the right.
+  const actualRightX = (gen: number, fallback: number) =>
+    Math.max(rowRightX.get(gen) ?? fallback, fallback);
+
   let curX = MARGIN;
   for (const fg of rootFGs) {
     placeFG(fg.id, curX);
-    curX += fgW(fg.id) + sibGap;
+    // Advance by ACTUAL rightmost position, not estimated fgW.
+    const parentGen = fg.parentIds.length
+      ? Math.max(...fg.parentIds.map((id) => genMap.get(id) ?? 0))
+      : 0;
+    curX = actualRightX(parentGen, curX + PW) + sibGap;
   }
 
   // ── Root persons not reached by any root FG (isolated / single parents) ──────
+  // Reset curX to actual rightmost gen-0 position before placing these.
+  curX = actualRightX(0, MARGIN - sibGap) + sibGap;
+
   const rootPersons = graph.persons
     .filter((p) => !personParentFG.has(p.id))
     .sort((a, b) => (a.birthYear ?? 9999) - (b.birthYear ?? 9999));
 
   for (const p of rootPersons) {
     if (posMap.has(p.id)) continue;
+    const pGen = genMap.get(p.id) ?? 0;
     const cFGs = personChildFGs.get(p.id) ?? [];
     if (cFGs.length > 0) {
-      let fgX = curX;
       for (const cFgId of cFGs) {
         if (!placedFGs.has(cFgId)) {
-          placeFG(cFgId, fgX);
-          fgX += fgW(cFgId) + sibGap;
+          placeFG(cFgId, curX);
+          curX = actualRightX(pGen, curX + PW) + sibGap;
         }
       }
       if (!posMap.has(p.id)) pushPerson(p.id, curX + (personW(p.id) - PW) / 2);
-      curX += personW(p.id) + sibGap;
     } else {
       pushPerson(p.id, curX);
-      curX += PW + sibGap;
     }
+    curX = actualRightX(pGen, curX + PW) + sibGap;
   }
 
   // ── Orphaned FG nodes (parents placed but FG missed) ─────────────────────────

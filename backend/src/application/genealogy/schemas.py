@@ -84,6 +84,13 @@ class AddParentRequest(BaseModel):
     union_type: UnionType = UnionType.UNKNOWN
 
 
+class AddBothParentsRequest(BaseModel):
+    father_id: uuid.UUID
+    mother_id: uuid.UUID
+    parentage_type: ParentageType = ParentageType.BIOLOGICAL
+    union_type: UnionType = UnionType.MARRIAGE
+
+
 class AddChildRequest(BaseModel):
     child_id: uuid.UUID
     other_parent_id: Optional[uuid.UUID] = None

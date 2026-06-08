@@ -106,6 +106,55 @@ export function descendantSubgraphIds(
   return included;
 }
 
+/** IDs of persons/family-groups to include in descendant-family chart.
+ *  Like descendantSubgraphIds, but also includes the spouse (co-parent) at each level.
+ */
+export function descendantFamilySubgraphIds(
+  graph: ApiTreeGraph,
+  focusPersonId: string,
+  maxGenerations = 100
+): Set<string> {
+  // Lookup: personId → family group IDs where they are a parent
+  const parentToFGs = new Map<string, string[]>();
+  for (const fg of graph.familyGroups) {
+    for (const parentId of fg.parentIds) {
+      const existing = parentToFGs.get(parentId) ?? [];
+      parentToFGs.set(parentId, [...existing, fg.id]);
+    }
+  }
+
+  const fgById = new Map(graph.familyGroups.map((fg) => [fg.id, fg]));
+  const included = new Set<string>();
+  included.add(focusPersonId);
+
+  let frontier = [focusPersonId];
+
+  for (let gen = 0; gen < maxGenerations && frontier.length > 0; gen++) {
+    const nextFrontier: string[] = [];
+    for (const personId of frontier) {
+      for (const fgId of parentToFGs.get(personId) ?? []) {
+        included.add(fgId);
+        const fg = fgById.get(fgId);
+        if (!fg) continue;
+        // Include co-parents (spouses of descendants)
+        for (const parentId of fg.parentIds) {
+          included.add(parentId);
+        }
+        // Include children and queue them for further traversal
+        for (const childId of Object.keys(fg.children)) {
+          if (!included.has(childId)) {
+            included.add(childId);
+            nextFrontier.push(childId);
+          }
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  return included;
+}
+
 /**
  * Layout for ancestor chart (focus at bottom, ancestors rising above).
  * Uses dagre BT (bottom-to-top) direction.

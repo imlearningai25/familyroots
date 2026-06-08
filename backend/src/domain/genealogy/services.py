@@ -232,6 +232,64 @@ class FamilyTreeDomainService:
 
         return result
 
+    # ── Add both parents ─────────────────────────────────────────
+
+    def add_both_parents(
+        self,
+        graph: FamilyGraph,
+        tree_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        child_id: uuid.UUID,
+        father_id: uuid.UUID,
+        mother_id: uuid.UUID,
+        parentage_type: ParentageType = ParentageType.BIOLOGICAL,
+        union_type: UnionType = UnionType.MARRIAGE,
+    ) -> MutationResult:
+        """
+        Add a father and mother to a child in one atomic operation.
+
+        If father and mother already share a family group, the child is added
+        to that group (becoming a sibling of their existing children).
+        Otherwise a new family group is created for all three.
+        """
+        self._require_in_tree(graph, child_id, tree_id)
+        self._require_in_tree(graph, father_id, tree_id)
+        self._require_in_tree(graph, mother_id, tree_id)
+
+        fg_id, fg_exists = self._find_or_plan_family_group(graph, father_id, mother_id)
+
+        self._validator.before_add_both_parents(
+            graph, child_id, father_id, mother_id, fg_id, fg_exists
+        )
+
+        result = MutationResult(
+            description=f"Add both parents (father={father_id}, mother={mother_id}) to child {child_id}",
+        )
+
+        if not fg_exists:
+            result.new_family_group = CreateFamilyGroupCommand(
+                id=fg_id,
+                tree_id=tree_id,
+                tenant_id=tenant_id,
+                union_type=union_type,
+            )
+            result.memberships.append(AddPersonToFamilyGroupCommand(
+                family_group_id=fg_id, person_id=father_id, tree_id=tree_id, role="PARENT",
+            ))
+            result.memberships.append(AddPersonToFamilyGroupCommand(
+                family_group_id=fg_id, person_id=mother_id, tree_id=tree_id, role="PARENT",
+            ))
+
+        result.memberships.append(AddPersonToFamilyGroupCommand(
+            family_group_id=fg_id,
+            person_id=child_id,
+            tree_id=tree_id,
+            role="CHILD",
+            parentage_type=parentage_type,
+        ))
+
+        return result
+
     # ── Add spouse ────────────────────────────────────────────────
 
     def add_spouse(

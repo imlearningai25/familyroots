@@ -339,9 +339,9 @@ function AddPersonModal({ treeId, token, onClose, onAdded }: AddPersonModalProps
 
 // ── Add Relation Modal (Add Parent / Child / Spouse) ───────────────────────
 
-type RelationMode = 'parent' | 'child' | 'spouse';
+type RelationMode = 'parent' | 'child' | 'spouse' | 'bothParents';
 
-const RELATION_CONFIG: Record<RelationMode, { label: string; linkBody: (id: string) => Record<string, unknown>; linkPath: (anchor: string) => string }> = {
+const RELATION_CONFIG: Record<'parent' | 'child' | 'spouse', { label: string; linkBody: (id: string) => Record<string, unknown>; linkPath: (anchor: string) => string }> = {
   parent: {
     label: 'Add Parent',
     linkPath: (anchor) => `parents`,
@@ -360,7 +360,7 @@ const RELATION_CONFIG: Record<RelationMode, { label: string; linkBody: (id: stri
 };
 
 interface AddRelationModalProps {
-  mode: RelationMode;
+  mode: 'parent' | 'child' | 'spouse';
   anchorPersonId: string;
   anchorName: string;
   treeId: string;
@@ -543,6 +543,256 @@ function AddRelationModal({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Add Both Parents Modal ────────────────────────────────────────────────
+
+interface AddBothParentsModalProps {
+  anchorPersonId: string;
+  anchorName: string;
+  anchorHasParents: boolean;
+  treeId: string;
+  token: string | null;
+  candidates: CandidatePerson[];
+  familyGroups: { parentIds: string[] }[];
+  onClose: () => void;
+  onAdded: () => void;
+}
+
+function PersonPicker({
+  label, search, onSearch, selected, onSelect, candidates, emptyConstrainedMsg,
+}: {
+  label: string;
+  search: string;
+  onSearch: (v: string) => void;
+  selected: string | null;
+  onSelect: (id: string | null) => void;
+  candidates: CandidatePerson[];
+  emptyConstrainedMsg?: string;
+}) {
+  const filtered = candidates.filter(
+    (p) => `${p.displayGivenName} ${p.displaySurname}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  const selectedPerson = candidates.find((c) => c.id === selected)
+    ?? (selected ? { displayGivenName: selected, displaySurname: '', sex: 'UNKNOWN' } as CandidatePerson : undefined);
+  const selectedName = selectedPerson
+    ? `${selectedPerson.displayGivenName} ${selectedPerson.displaySurname}`.trim() || 'Unknown'
+    : null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+      {selected && selectedPerson ? (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-50 border border-brand-200">
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${SEX_INITIAL_COLOR[selectedPerson.sex ?? 'UNKNOWN'] ?? SEX_INITIAL_COLOR.UNKNOWN}`}>
+            {selectedName?.[0]?.toUpperCase() ?? '?'}
+          </div>
+          <span className="text-sm text-brand-700 font-medium flex-1 truncate">{selectedName}</span>
+          <button type="button" onClick={() => { onSelect(null); onSearch(''); }} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+        </div>
+      ) : (
+        <>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={`Search for ${label.toLowerCase()}…`}
+            className="w-full h-8 px-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-slate-400 text-center">
+                {emptyConstrainedMsg ?? 'No members found'}
+              </p>
+            ) : filtered.map((p) => {
+              const name = `${p.displayGivenName} ${p.displaySurname}`.trim() || 'Unknown';
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { onSelect(p.id); onSearch(''); }}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-slate-50"
+                >
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${SEX_INITIAL_COLOR[p.sex] ?? SEX_INITIAL_COLOR.UNKNOWN}`}>
+                    {name[0]?.toUpperCase() ?? '?'}
+                  </div>
+                  <span className="text-sm text-slate-700 truncate">{name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AddBothParentsModal({
+  anchorPersonId, anchorName, anchorHasParents, treeId, token, candidates, familyGroups, onClose, onAdded,
+}: AddBothParentsModalProps) {
+  const [fatherSearch, setFatherSearch] = useState('');
+  const [motherSearch, setMotherSearch] = useState('');
+  const [fatherId,     setFatherId]     = useState<string | null>(null);
+  const [motherId,     setMotherId]     = useState<string | null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState('');
+
+  // Partners of selected father in the tree (people already in a union with him)
+  const fatherPartnerIds = useMemo(() => {
+    if (!fatherId) return null;
+    return new Set(
+      familyGroups
+        .filter((fg) => fg.parentIds.includes(fatherId))
+        .flatMap((fg) => fg.parentIds.filter((id) => id !== fatherId)),
+    );
+  }, [fatherId, familyGroups]);
+
+  // Partners of selected mother in the tree
+  const motherPartnerIds = useMemo(() => {
+    if (!motherId) return null;
+    return new Set(
+      familyGroups
+        .filter((fg) => fg.parentIds.includes(motherId))
+        .flatMap((fg) => fg.parentIds.filter((id) => id !== motherId)),
+    );
+  }, [motherId, familyGroups]);
+
+  // Mother candidates: FEMALE only; if a father is selected, further narrow to his known partners
+  const motherCandidates = useMemo(
+    () => fatherPartnerIds
+      ? candidates.filter((c) => c.sex === 'FEMALE' && fatherPartnerIds.has(c.id))
+      : candidates.filter((c) => c.sex === 'FEMALE' && c.id !== fatherId),
+    [fatherPartnerIds, candidates, fatherId],
+  );
+
+  // Father candidates: MALE only; if a mother is selected, further narrow to her known partners
+  const fatherCandidates = useMemo(
+    () => motherPartnerIds
+      ? candidates.filter((c) => c.sex === 'MALE' && motherPartnerIds.has(c.id))
+      : candidates.filter((c) => c.sex === 'MALE' && c.id !== motherId),
+    [motherPartnerIds, candidates, motherId],
+  );
+
+  function handleSetFather(id: string | null) {
+    setFatherId(id);
+    setFatherSearch('');
+    // If the current mother is no longer a valid partner of the new father, clear her
+    if (id && motherId) {
+      const newPartners = new Set(
+        familyGroups
+          .filter((fg) => fg.parentIds.includes(id))
+          .flatMap((fg) => fg.parentIds.filter((pid) => pid !== id)),
+      );
+      if (newPartners.size > 0 && !newPartners.has(motherId)) setMotherId(null);
+    }
+  }
+
+  function handleSetMother(id: string | null) {
+    setMotherId(id);
+    setMotherSearch('');
+    // If the current father is no longer a valid partner of the new mother, clear him
+    if (id && fatherId) {
+      const newPartners = new Set(
+        familyGroups
+          .filter((fg) => fg.parentIds.includes(id))
+          .flatMap((fg) => fg.parentIds.filter((pid) => pid !== id)),
+      );
+      if (newPartners.size > 0 && !newPartners.has(fatherId)) setFatherId(null);
+    }
+  }
+
+  async function handleSubmit() {
+    if (!fatherId || !motherId) return;
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API_BASE}/trees/${treeId}/persons/${anchorPersonId}/parents/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+        body: JSON.stringify({ father_id: fatherId, mother_id: motherId, parentage_type: 'BIOLOGICAL', union_type: 'MARRIAGE' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).detail ?? 'Failed to link parents');
+      }
+      onAdded();
+    } catch (err) { setError((err as Error).message); }
+    finally { setLoading(false); }
+  }
+
+  const fatherName = candidates.find((c) => c.id === fatherId);
+  const motherName = candidates.find((c) => c.id === motherId);
+  const fatherLabel = fatherName
+    ? `${fatherName.displayGivenName} ${fatherName.displaySurname}`.trim() || 'Selected father'
+    : null;
+  const motherLabel = motherName
+    ? `${motherName.displayGivenName} ${motherName.displaySurname}`.trim() || 'Selected mother'
+    : null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+        <div>
+          <h2 className="font-bold text-slate-900">Add Father & Mother</h2>
+          {anchorName && <p className="text-xs text-slate-400 mt-0.5">for {anchorName}</p>}
+        </div>
+
+        {anchorHasParents && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            {anchorName} already has parents recorded. Linking new parents will replace the existing ones.
+          </p>
+        )}
+
+        <PersonPicker
+          label="Father"
+          search={fatherSearch}
+          onSearch={setFatherSearch}
+          selected={fatherId}
+          onSelect={handleSetFather}
+          candidates={fatherCandidates}
+          emptyConstrainedMsg={
+            motherPartnerIds && motherPartnerIds.size === 0
+              ? `${motherLabel ?? 'Selected mother'} has no known partners in this tree`
+              : 'No matches'
+          }
+        />
+
+        <PersonPicker
+          label="Mother"
+          search={motherSearch}
+          onSearch={setMotherSearch}
+          selected={motherId}
+          onSelect={handleSetMother}
+          candidates={motherCandidates}
+          emptyConstrainedMsg={
+            fatherPartnerIds && fatherPartnerIds.size === 0
+              ? `${fatherLabel ?? 'Selected father'} has no known partners in this tree`
+              : 'No matches'
+          }
+        />
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="flex-1 h-9 text-sm border border-slate-300 rounded-lg hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading || !fatherId || !motherId}
+            className="flex-1 h-9 text-sm bg-brand-500 text-white rounded-lg hover:bg-brand-600 disabled:opacity-50"
+          >
+            {loading ? 'Linking…' : 'Link parents'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1549,6 +1799,7 @@ interface SelectionPanelProps {
   onClose: () => void;
   onOpenProfile: () => void;
   onAddParent: () => void;
+  onAddBothParents: () => void;
   onAddChild: () => void;
   onAddSpouse: () => void;
   onSetFocus: () => void;
@@ -1558,7 +1809,7 @@ interface SelectionPanelProps {
 
 function SelectionPanel({
   personId, personName, treeId, token, canWrite,
-  onClose, onOpenProfile, onAddParent, onAddChild, onAddSpouse, onSetFocus, onDeleted, onEdit,
+  onClose, onOpenProfile, onAddParent, onAddBothParents, onAddChild, onAddSpouse, onSetFocus, onDeleted, onEdit,
 }: SelectionPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting,      setDeleting]      = useState(false);
@@ -1621,6 +1872,12 @@ function SelectionPanel({
             <button onClick={onAddParent}
               className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
               ➕ Add Parent
+            </button>
+          )}
+          {canWrite && (
+            <button onClick={onAddBothParents}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 rounded-lg hover:bg-slate-50 border border-slate-200">
+              👨‍👩 Add Father & Mother
             </button>
           )}
           {canWrite && (
@@ -2406,6 +2663,7 @@ export default function FamilyTreePage() {
           canWrite={canWrite}
           onClose={handlePanelClose}
           onAddParent={() => setRelationMode('parent')}
+          onAddBothParents={() => setRelationMode('bothParents')}
           onAddChild={()  => setRelationMode('child')}
           onAddSpouse={() => setRelationMode('spouse')}
           onSetFocus={handleSetFocus}
@@ -2428,6 +2686,30 @@ export default function FamilyTreePage() {
         const alreadyHasParents = new Set(
           (graph?.familyGroups ?? []).flatMap((g) => Object.keys(g.children))
         );
+
+        if (relationMode === 'bothParents') {
+          const existingParents = (graph?.familyGroups ?? [])
+            .filter((fg) => Object.keys(fg.children).includes(panelPersonId))
+            .flatMap((fg) => fg.parentIds);
+          const excludeIds = new Set([panelPersonId, ...existingParents]);
+          const candidates = (graph?.persons ?? [])
+            .filter((p) => !excludeIds.has(p.id))
+            .map((p) => ({ ...p, hasParents: alreadyHasParents.has(p.id) }));
+          return (
+            <AddBothParentsModal
+              anchorPersonId={panelPersonId}
+              anchorName={panelPersonName}
+              anchorHasParents={alreadyHasParents.has(panelPersonId)}
+              treeId={treeId ?? ''}
+              token={accessToken}
+              candidates={candidates}
+              familyGroups={graph?.familyGroups ?? []}
+              onClose={closeRelationModal}
+              onAdded={handleRelationAdded}
+            />
+          );
+        }
+
         let excludeIds: Set<string>;
         if (relationMode === 'parent') {
           const existingParents = (graph?.familyGroups ?? [])

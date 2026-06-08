@@ -196,6 +196,25 @@ class CompositeValidator:
         self._integrity.validate_not_self(person1_id, person2_id, "spouse")
         self._integrity.validate_not_duplicate_spouse(graph, person1_id, person2_id)
 
+    def before_add_both_parents(
+        self,
+        graph: FamilyGraph,
+        child_id: uuid.UUID,
+        father_id: uuid.UUID,
+        mother_id: uuid.UUID,
+        fg_id: uuid.UUID,
+        fg_exists: bool,
+    ) -> None:
+        self._integrity.validate_not_self(child_id, father_id, "parent")
+        self._integrity.validate_not_self(child_id, mother_id, "parent")
+        if not fg_exists:
+            self._integrity.validate_not_duplicate_parent(graph, fg_id, father_id)
+            self._integrity.validate_not_duplicate_parent(graph, fg_id, mother_id)
+        self._integrity.validate_child_has_no_parents(graph, child_id)
+        self._integrity.validate_not_duplicate_child(graph, fg_id, child_id)
+        self._circular.validate_add_parent(graph, child_id, father_id)
+        self._circular.validate_add_parent(graph, child_id, mother_id)
+
     def before_add_sibling(
         self,
         graph: FamilyGraph,

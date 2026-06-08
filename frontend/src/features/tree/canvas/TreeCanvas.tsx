@@ -96,13 +96,16 @@ function LegendRow({
 import type { LayoutMode } from '../types';
 
 const LEGEND_TITLES: Record<LayoutMode, string> = {
-  vertical:       'Family Tree',
-  horizontal:     'Family Tree',
-  fan:            'Fan Chart',
-  'ancestry-fan': 'Ancestry Fan',
-  ancestor:       'Ancestor Chart',
-  descendant:     'Descendant Chart',
-  pedigree:       'Pedigree Chart',
+  compact:             'Family Tree',
+  vertical:            'Family Tree',
+  horizontal:          'Family Tree',
+  fan:                 'Fan Chart',
+  'ancestry-fan':      'Ancestry Fan',
+  ancestor:            'Ancestor Chart',
+  descendant:          'Descendant Chart',
+  'descendant-family': 'Descendants + Spouses',
+  'ancestor-family':   'Ancestors + Spouses',
+  pedigree:            'Pedigree Chart',
 };
 
 // For focus-scoped modes: max generations the chart shows.

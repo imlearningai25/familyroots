@@ -112,17 +112,45 @@ export function transformGraphToFlow(
 
   // ── Edges ─────────────────────────────────────────────────────────────────
 
+  // Pre-compute per-person union ordinals (1-based) for each union type.
+  // Only populated when a person has 2+ unions of the same type.
+  const unionOrdinalKey = (personId: string, fgId: string) => `${personId}::${fgId}`;
+  const unionOrdinals = new Map<string, number>();
+
+  const personFgs = new Map<string, Array<{ fgId: string; unionType: string }>>();
+  for (const fg of graph.familyGroups) {
+    for (const parentId of fg.parentIds) {
+      if (!personFgs.has(parentId)) personFgs.set(parentId, []);
+      personFgs.get(parentId)!.push({ fgId: fg.id, unionType: fg.unionType });
+    }
+  }
+  for (const [personId, fgs] of personFgs) {
+    const byType = new Map<string, string[]>();
+    for (const { fgId, unionType } of fgs) {
+      if (!byType.has(unionType)) byType.set(unionType, []);
+      byType.get(unionType)!.push(fgId);
+    }
+    for (const fgIds of byType.values()) {
+      if (fgIds.length >= 2) {
+        fgIds.forEach((fgId, idx) => {
+          unionOrdinals.set(unionOrdinalKey(personId, fgId), idx + 1);
+        });
+      }
+    }
+  }
+
   const edges: TreeEdge[] = [];
 
   for (const fg of graph.familyGroups) {
     // Parent → FamilyGroup (union edge)
     for (const parentId of fg.parentIds) {
+      const unionOrdinal = unionOrdinals.get(unionOrdinalKey(parentId, fg.id));
       edges.push({
         id: `union-${parentId}-${fg.id}`,
         source: parentId,
         target: fg.id,
         type: 'union' as const,
-        data: { kind: 'union', unionType: fg.unionType },
+        data: { kind: 'union', unionType: fg.unionType, unionOrdinal },
         animated: false,
       } as TreeEdge);
     }

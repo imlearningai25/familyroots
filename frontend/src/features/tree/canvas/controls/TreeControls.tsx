@@ -3,7 +3,7 @@
  *
  * Positioned top-left. Controls:
  *   - Zoom in / Zoom out / Fit view
- *   - Layout mode toggle (TB / LR / Fan / Ancestor / Descendant)
+ *   - Layout mode toggle (TB / LR / Fan / Ancestor / Descendant / …)
  *   - Expand all / Collapse all
  *   - Export (PNG)
  */
@@ -12,6 +12,67 @@ import React, { memo, useCallback } from 'react';
 import { useReactFlow } from 'reactflow';
 import type { LayoutMode } from '../../types';
 import { useCanvasStore } from '@store/canvas.store';
+
+// ── Compact view icon (two parent cards → child card) ─────────────────────
+const CompactViewIcon = () => (
+  <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+    <rect x="0.5" y="0.5" width="4" height="2.5" rx="0.5" />
+    <rect x="9.5" y="0.5" width="4" height="2.5" rx="0.5" />
+    <rect x="5"   y="9"   width="4" height="2.5" rx="0.5" />
+    <line x1="2.5" y1="3"   x2="2.5" y2="5.5" />
+    <line x1="11.5" y1="3"  x2="11.5" y2="5.5" />
+    <line x1="2.5"  y1="5.5" x2="11.5" y2="5.5" />
+    <line x1="7"    y1="5.5" x2="7"    y2="9" />
+  </svg>
+);
+
+/**
+ * DescendantFamilyIcon — focus person (●) at top branching down to two couple pairs (○━○).
+ * Conveys "show all descendants with their spouses."
+ */
+const DescendantFamilyIcon = () => (
+  <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+    {/* Focus: solid filled circle at top center */}
+    <circle cx="8" cy="2" r="1.8" fill="currentColor" stroke="none" />
+    {/* Branch lines */}
+    <line x1="8"    y1="3.8" x2="8"    y2="5.5" />
+    <line x1="3.5"  y1="5.5" x2="12.5" y2="5.5" />
+    <line x1="3.5"  y1="5.5" x2="3.5"  y2="7.5" />
+    <line x1="12.5" y1="5.5" x2="12.5" y2="7.5" />
+    {/* Left couple: two circles connected by dash */}
+    <circle cx="1.8" cy="10.5" r="1.5" />
+    <line   x1="3.3" y1="10.5" x2="4"   y2="10.5" />
+    <circle cx="5.3" cy="10.5" r="1.5" />
+    {/* Right couple: two circles connected by dash */}
+    <circle cx="10"  cy="10.5" r="1.5" />
+    <line   x1="11.5" y1="10.5" x2="12.2" y2="10.5" />
+    <circle cx="13.7" cy="10.5" r="1.5" />
+  </svg>
+);
+
+/**
+ * AncestorFamilyIcon — two couple pairs (○━○) at top merging down to focus person (●).
+ * Conveys "show all ancestors with their spouses."
+ */
+const AncestorFamilyIcon = () => (
+  <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+    {/* Left couple (top-left): two circles connected */}
+    <circle cx="1.8" cy="3.5" r="1.5" />
+    <line   x1="3.3" y1="3.5" x2="4"   y2="3.5" />
+    <circle cx="5.3" cy="3.5" r="1.5" />
+    {/* Right couple (top-right): two circles connected */}
+    <circle cx="10"  cy="3.5" r="1.5" />
+    <line   x1="11.5" y1="3.5" x2="12.2" y2="3.5" />
+    <circle cx="13.7" cy="3.5" r="1.5" />
+    {/* Merging lines down to focus */}
+    <line x1="3.5"  y1="5"   x2="3.5"  y2="8.5" />
+    <line x1="12.5" y1="5"   x2="12.5" y2="8.5" />
+    <line x1="3.5"  y1="8.5" x2="12.5" y2="8.5" />
+    <line x1="8"    y1="8.5" x2="8"    y2="10.2" />
+    {/* Focus: solid filled circle at bottom */}
+    <circle cx="8" cy="12" r="1.8" fill="currentColor" stroke="none" />
+  </svg>
+);
 
 // ── Icon helpers (minimal inline SVGs) ────────────────────────────────────
 
@@ -31,16 +92,23 @@ const FitIcon = () => (
     <rect x="4" y="4" width="6" height="6" />
   </svg>
 );
+
 // ── Layout mode buttons ────────────────────────────────────────────────────
 
-const LAYOUT_MODES: { mode: LayoutMode; label: string; title: string }[] = [
-  { mode: 'vertical',    label: '↕',   title: 'Vertical (top → bottom)' },
-  { mode: 'horizontal',  label: '↔',   title: 'Horizontal (left → right)' },
-  { mode: 'ancestor',    label: '↑',   title: 'Ancestor chart (roots above)' },
-  { mode: 'descendant',  label: '↓',   title: 'Descendant chart (roots below)' },
-  { mode: 'fan',          label: '◑',   title: 'Fan chart — semicircle (180°)' },
-  { mode: 'ancestry-fan', label: '◎',   title: 'Ancestry fan chart — full circle (360°)' },
-  { mode: 'pedigree',    label: '⊢',   title: 'Pedigree chart (ancestors left → right)' },
+type LayoutModeEntry =
+  | { mode: LayoutMode; label: string; title: string; icon?: never }
+  | { mode: LayoutMode; icon: React.ReactNode; title: string; label?: never };
+
+const LAYOUT_MODES: LayoutModeEntry[] = [
+  { mode: 'vertical',           label: '↕',  title: 'Vertical (multi-marriage aware)' },
+  { mode: 'horizontal',         label: '↔',  title: 'Horizontal (left → right)' },
+  { mode: 'ancestor',           label: '↑',  title: 'Ancestor chart (roots above)' },
+  { mode: 'descendant',         label: '↓',  title: 'Descendant chart (roots below)' },
+  { mode: 'descendant-family',  icon: <DescendantFamilyIcon />, title: 'Descendants + spouses — all descendants with their partners' },
+  { mode: 'ancestor-family',    icon: <AncestorFamilyIcon />,   title: 'Ancestors + spouses — all ancestors with their partners' },
+  { mode: 'fan',                label: '◑',  title: 'Fan chart — semicircle (180°)' },
+  { mode: 'ancestry-fan',       label: '◎',  title: 'Ancestry fan chart — full circle (360°)' },
+  { mode: 'pedigree',           label: '⊢',  title: 'Pedigree chart (ancestors left → right)' },
 ];
 
 // ── Control button ─────────────────────────────────────────────────────────
@@ -91,6 +159,11 @@ export const TreeControls = memo(({ graph, onExpandAll, onCollapseAll }: TreeCon
     fitView({ duration: 400, padding: 0.1 });
   }, [fitView]);
 
+  const handleCompactView = useCallback(() => {
+    setLayoutMode('compact');
+    bumpLayoutReset();
+  }, [setLayoutMode, bumpLayoutReset]);
+
   const handleZoomIn  = useCallback(() => zoomIn({ duration: 200 }),  [zoomIn]);
   const handleZoomOut = useCallback(() => zoomOut({ duration: 200 }), [zoomOut]);
 
@@ -116,14 +189,14 @@ export const TreeControls = memo(({ graph, onExpandAll, onCollapseAll }: TreeCon
       <Divider />
 
       {/* Layout modes */}
-      {LAYOUT_MODES.map(({ mode, label, title }) => (
+      {LAYOUT_MODES.map(({ mode, title, ...rest }) => (
         <CtrlBtn
           key={mode}
           onClick={() => setLayoutMode(mode)}
           title={title}
           active={layoutMode === mode}
         >
-          {label}
+          {'icon' in rest ? rest.icon : rest.label}
         </CtrlBtn>
       ))}
 
@@ -142,6 +215,15 @@ export const TreeControls = memo(({ graph, onExpandAll, onCollapseAll }: TreeCon
       {/* Reset layout */}
       <CtrlBtn onClick={bumpLayoutReset} title="Reset layout and fit view">
         ↺
+      </CtrlBtn>
+
+      {/* Compact family-tree view */}
+      <CtrlBtn
+        onClick={handleCompactView}
+        title="Compact view — traditional family tree layout"
+        active={layoutMode === 'compact'}
+      >
+        <CompactViewIcon />
       </CtrlBtn>
 
     </div>

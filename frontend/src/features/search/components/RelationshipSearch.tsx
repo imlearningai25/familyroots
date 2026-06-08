@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNameSearch, useRelationship } from '../useSearch';
-import type { PersonHit, RelationshipPath } from '../types';
+import type { PersonHit, RelationshipPath, PathStep } from '../types';
 
 interface Tree { id: string; name: string; }
 
@@ -227,9 +227,9 @@ function RelationshipResult({
         </p>
       </div>
 
-      {/* Path */}
+      {/* Connection path (horizontal chain) */}
       {rel.path.length > 0 && (
-        <div className="px-5 py-5">
+        <div className="px-5 py-5 border-b border-gray-100">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
             Connection path
           </p>
@@ -254,6 +254,199 @@ function RelationshipResult({
           </div>
         </div>
       )}
+
+      {/* Tree structure view */}
+      {rel.path.length > 0 && (
+        <div className="px-5 py-6">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-5">
+            Family tree structure
+          </p>
+          <RelationshipTreeView path={rel.path} edgeLabels={rel.edge_labels ?? []} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tree structure visualization ───────────────────────────────────────────────
+
+const EDGE_STYLE: Record<string, { color: string; icon: string; label: string }> = {
+  parent:  { color: '#6366f1', icon: '↑', label: 'parent of' },
+  child:   { color: '#10b981', icon: '↓', label: 'child of'  },
+  spouse:  { color: '#8b5cf6', icon: '♦', label: 'spouse'    },
+  sibling: { color: '#f59e0b', icon: '↔', label: 'sibling'   },
+  relative:{ color: '#9ca3af', icon: '→', label: 'relative'  },
+};
+
+function PersonBubble({
+  step,
+  highlight,
+}: {
+  step: PathStep;
+  highlight?: 'start' | 'end' | 'ancestor' | 'none';
+}) {
+  const styles = {
+    start:    { wrap: 'bg-indigo-50 border-indigo-300',   avatar: 'bg-indigo-200 text-indigo-800',   text: 'text-indigo-800'  },
+    end:      { wrap: 'bg-emerald-50 border-emerald-300', avatar: 'bg-emerald-200 text-emerald-800', text: 'text-emerald-800' },
+    ancestor: { wrap: 'bg-amber-50 border-amber-300',     avatar: 'bg-amber-200 text-amber-800',     text: 'text-amber-800'   },
+    none:     { wrap: 'bg-white border-gray-200',         avatar: 'bg-gray-100 text-gray-700',       text: 'text-gray-800'    },
+  };
+  const s = styles[highlight ?? 'none'];
+
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm ${s.wrap}`}>
+      <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${s.avatar}`}>
+        {step.name[0]?.toUpperCase() ?? '?'}
+      </div>
+      <span className={`text-sm font-medium whitespace-nowrap ${s.text}`}>{step.name}</span>
+      {highlight === 'ancestor' && (
+        <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded ml-1">
+          common ancestor
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BranchConnector({ label }: { label: string }) {
+  const e = EDGE_STYLE[label] ?? EDGE_STYLE.relative;
+  return (
+    <div className="flex flex-col items-center" style={{ gap: 2 }}>
+      <div className="w-px h-3 bg-gray-300" />
+      <div className="flex items-center gap-1">
+        <span style={{ color: e.color, fontSize: 13, lineHeight: 1 }}>{e.icon}</span>
+        <span className="text-[10px] text-gray-400">{e.label}</span>
+      </div>
+      <div className="w-px h-3 bg-gray-300" />
+    </div>
+  );
+}
+
+function RelationshipTreeView({
+  path,
+  edgeLabels,
+}: {
+  path: PathStep[];
+  edgeLabels: string[];
+}) {
+  if (path.length === 0) return null;
+
+  if (path.length === 1) {
+    return (
+      <div className="flex justify-center">
+        <PersonBubble step={path[0]} highlight="start" />
+      </div>
+    );
+  }
+
+  // Compute generation offset: parent = −1, child = +1, spouse/sibling = 0
+  const gens: number[] = [0];
+  let g = 0;
+  for (const lbl of edgeLabels) {
+    if (lbl === 'parent') g--;
+    else if (lbl === 'child') g++;
+    gens.push(g);
+  }
+
+  const minGen  = Math.min(...gens);
+  const pivotIdx = gens.indexOf(minGen);
+  const hasAscent  = pivotIdx > 0;
+  const hasDescent = pivotIdx < path.length - 1;
+
+  // ── Direct spouse / sibling (2 people, same generation) ──────────────────
+  if (path.length === 2 && minGen === 0) {
+    const e = EDGE_STYLE[edgeLabels[0]] ?? EDGE_STYLE.relative;
+    return (
+      <div className="flex items-center justify-center gap-4">
+        <PersonBubble step={path[0]} highlight="start" />
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="text-[10px] text-gray-400">{e.label}</span>
+          <span style={{ color: e.color, fontSize: 20 }}>{e.icon}</span>
+        </div>
+        <PersonBubble step={path[1]} highlight="end" />
+      </div>
+    );
+  }
+
+  // ── V-shape: path ascends to a common ancestor then descends ─────────────
+  if (hasAscent && hasDescent) {
+    const ancestor = path[pivotIdx];
+
+    // Left branch: closest-to-ancestor first → person1 at bottom
+    const leftBranch  = path.slice(0, pivotIdx).reverse();
+    // Flip labels because we're now showing ancestor → person1 (going down)
+    const leftLabels  = edgeLabels.slice(0, pivotIdx).reverse().map((l) =>
+      l === 'parent' ? 'child' : l === 'child' ? 'parent' : l
+    );
+
+    // Right branch: ancestor → person2 (going down)
+    const rightBranch = path.slice(pivotIdx + 1);
+    const rightLabels = edgeLabels.slice(pivotIdx);
+
+    return (
+      <div className="flex flex-col items-center">
+        {/* Common ancestor centered at top */}
+        <PersonBubble step={ancestor} highlight="ancestor" />
+
+        {/* Horizontal bar connecting to both branches */}
+        <div className="flex w-full" style={{ maxWidth: 520 }}>
+          <div className="flex-1 flex flex-col items-center">
+            <div className="w-px h-4 bg-gray-300" />
+            <div className="w-full h-px bg-gray-300" />
+          </div>
+          <div className="flex-1 flex flex-col items-center">
+            <div className="w-px h-4 bg-gray-300" />
+            <div className="w-full h-px bg-gray-300" />
+          </div>
+        </div>
+
+        {/* Two columns: left = path to person1, right = path to person2 */}
+        <div
+          className="grid gap-6 w-full"
+          style={{ gridTemplateColumns: '1fr 1fr', maxWidth: 520 }}
+        >
+          {/* Left branch (ancestor → person 1) */}
+          <div className="flex flex-col items-center gap-0">
+            {leftBranch.map((p, i) => (
+              <React.Fragment key={p.person_id}>
+                <BranchConnector label={leftLabels[i] ?? 'child'} />
+                <PersonBubble
+                  step={p}
+                  highlight={i === leftBranch.length - 1 ? 'start' : 'none'}
+                />
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Right branch (ancestor → person 2) */}
+          <div className="flex flex-col items-center gap-0">
+            {rightBranch.map((p, i) => (
+              <React.Fragment key={p.person_id}>
+                <BranchConnector label={rightLabels[i] ?? 'child'} />
+                <PersonBubble
+                  step={p}
+                  highlight={i === rightBranch.length - 1 ? 'end' : 'none'}
+                />
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Simple vertical chain (all ascending or all descending) ───────────────
+  return (
+    <div className="flex flex-col items-center gap-0">
+      {path.map((p, i) => (
+        <React.Fragment key={p.person_id}>
+          <PersonBubble
+            step={p}
+            highlight={i === 0 ? 'start' : i === path.length - 1 ? 'end' : 'none'}
+          />
+          {i < edgeLabels.length && <BranchConnector label={edgeLabels[i]} />}
+        </React.Fragment>
+      ))}
     </div>
   );
 }

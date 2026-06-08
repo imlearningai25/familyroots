@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 
 from src.api.deps import NotAuditorDep, SessionDep, VerifiedUserDep
 from src.application.genealogy.schemas import (
+    AddBothParentsRequest,
     AddChildRequest,
     AddParentRequest,
     AddSiblingRequest,
@@ -418,6 +419,47 @@ async def add_parent(
     await _audit(session, tree_id, user, Action.ADD_RELATIONSHIP, AuditEntityType.PERSON,
                  entity_id=person_id,
                  after={"type": "parent", "parent_id": str(req.parent_id), "parentage": req.parentage_type.value})
+    await session.commit()
+
+
+# ── Add both parents (pair) ──────────────────────────────────────
+
+@router.post(
+    "/{person_id}/parents/pair",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    response_class=Response,
+    summary="Add a father and mother to a person in one atomic operation",
+)
+async def add_both_parents(
+    tree_id: uuid.UUID,
+    person_id: uuid.UUID,
+    req: AddBothParentsRequest,
+    user: NotAuditorDep,
+    session: SessionDep,
+) -> None:
+    from sqlalchemy import text as sa_text
+    from src.domain.collaboration.entities import Action, AuditEntityType
+
+    # Always remove any existing parent-family-group membership for this child
+    # so the user's explicit choice of both parents replaces the old ones.
+    await session.execute(
+        sa_text("""
+            DELETE FROM family_group_members
+            WHERE person_id = :pid
+              AND role = 'CHILD'
+              AND family_group_id IN (
+                  SELECT id FROM family_groups WHERE tree_id = :tid
+              )
+        """),
+        {"pid": person_id, "tid": tree_id},
+    )
+
+    svc = _svc(session)
+    await svc.add_both_parents(tree_id, user.tenant_id, person_id, req)
+    await _audit(session, tree_id, user, Action.ADD_RELATIONSHIP, AuditEntityType.PERSON,
+                 entity_id=person_id,
+                 after={"type": "both_parents", "father_id": str(req.father_id), "mother_id": str(req.mother_id)})
     await session.commit()
 
 

@@ -55,6 +55,7 @@ class RelationshipPathSchema(BaseModel):
     path: list[PathStepSchema]
     relationship_label: Optional[str]
     alternative_label: Optional[str] = None
+    edge_labels: list[str] = []
 
 
 class NameSearchResponse(BaseModel):
@@ -292,6 +293,7 @@ async def get_relationship(
             path=[PathStepSchema(person_id=s["person_id"], name=s["name"]) for s in rel.path],
             relationship_label=rel.relationship_label,
             alternative_label=rel.alternative_label,
+            edge_labels=rel.edge_labels,
         ),
         took_ms=results.took_ms,
     )

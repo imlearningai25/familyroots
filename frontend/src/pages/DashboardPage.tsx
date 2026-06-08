@@ -10,6 +10,7 @@ interface TreeSummary {
   name: string;
   description: string | null;
   cover_emoji: string | null;
+  cover_image_url: string | null;
   role: string;
   person_count: number;
   member_count: number;
@@ -88,7 +89,15 @@ function TreeCard({ tree, onEdit, onDelete, onShare }: TreeCardProps) {
       style={{ background: 'var(--portal-card-bg)', borderColor: 'var(--portal-border)' }}>
       <Link to={`/trees/${tree.id}`} className="block p-6">
         <div className="flex items-start justify-between mb-4">
-          <div className="text-3xl">{tree.cover_emoji || DEFAULT_COVER}</div>
+          {tree.cover_image_url ? (
+            <img
+              src={tree.cover_image_url}
+              alt=""
+              className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
+            />
+          ) : (
+            <div className="text-3xl">{tree.cover_emoji || DEFAULT_COVER}</div>
+          )}
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ROLE_BADGE[tree.role] ?? ROLE_BADGE.VIEWER}`}>
             {tree.role.charAt(0) + tree.role.slice(1).toLowerCase()}
           </span>
@@ -227,19 +236,73 @@ export default function DashboardPage() {
   const [createError, setCreateError] = useState('');
 
   // Edit tree modal
-  const [editTarget,      setEditTarget]      = useState<TreeSummary | null>(null);
-  const [editName,        setEditName]        = useState('');
-  const [editDesc,        setEditDesc]        = useState('');
-  const [editCoverEmoji,  setEditCoverEmoji]  = useState('');
-  const [editing,         setEditing]         = useState(false);
-  const [editError,       setEditError]       = useState('');
+  const [editTarget,        setEditTarget]        = useState<TreeSummary | null>(null);
+  const [editName,          setEditName]          = useState('');
+  const [editDesc,          setEditDesc]          = useState('');
+  const [editCoverEmoji,    setEditCoverEmoji]    = useState('');
+  const [editCoverImageUrl, setEditCoverImageUrl] = useState<string | null>(null);
+  const [editing,           setEditing]           = useState(false);
+  const [editError,         setEditError]         = useState('');
+  const [uploadingPhoto,    setUploadingPhoto]    = useState(false);
+  const [photoError,        setPhotoError]        = useState('');
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   function openEdit(tree: TreeSummary) {
     setEditTarget(tree);
     setEditName(tree.name);
     setEditDesc(tree.description ?? '');
     setEditCoverEmoji(tree.cover_emoji || DEFAULT_COVER);
+    setEditCoverImageUrl(tree.cover_image_url);
     setEditError('');
+    setPhotoError('');
+  }
+
+  async function handleTreePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !editTarget) return;
+    setUploadingPhoto(true);
+    setPhotoError('');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${API_BASE}/trees/${editTarget.id}/photo`, {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        credentials: 'include',
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).detail ?? 'Upload failed');
+      }
+      const { cover_image_url } = await res.json();
+      setEditCoverImageUrl(cover_image_url);
+      setTrees((prev) => prev.map((t) => t.id === editTarget.id ? { ...t, cover_image_url } : t));
+    } catch (err) {
+      setPhotoError((err as Error).message);
+    } finally {
+      setUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  }
+
+  async function handleRemoveTreePhoto() {
+    if (!editTarget) return;
+    setUploadingPhoto(true);
+    setPhotoError('');
+    try {
+      await fetch(`${API_BASE}/trees/${editTarget.id}/photo`, {
+        method: 'DELETE',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        credentials: 'include',
+      });
+      setEditCoverImageUrl(null);
+      setTrees((prev) => prev.map((t) => t.id === editTarget.id ? { ...t, cover_image_url: null } : t));
+    } catch {
+      setPhotoError('Failed to remove photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   async function handleEditSubmit(e: React.FormEvent) {
@@ -260,7 +323,7 @@ export default function DashboardPage() {
       }
       const updated = await res.json();
       setTrees((prev) => prev.map((t) => t.id === editTarget.id
-        ? { ...t, name: updated.name, description: updated.description, cover_emoji: updated.cover_emoji }
+        ? { ...t, name: updated.name, description: updated.description, cover_emoji: updated.cover_emoji, cover_image_url: updated.cover_image_url ?? t.cover_image_url }
         : t
       ));
       setEditTarget(null);
@@ -540,7 +603,56 @@ export default function DashboardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Cover</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cover photo</label>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleTreePhotoChange}
+                />
+                {editCoverImageUrl ? (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={editCoverImageUrl}
+                      alt="Tree cover"
+                      className="w-16 h-16 rounded-xl object-cover border border-gray-200"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        disabled={uploadingPhoto}
+                        className="text-sm text-brand-600 hover:text-brand-700 font-medium disabled:opacity-50"
+                      >
+                        {uploadingPhoto ? 'Uploading…' : 'Change photo'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveTreePhoto}
+                        disabled={uploadingPhoto}
+                        className="text-sm text-red-500 hover:text-red-600 disabled:opacity-50"
+                      >
+                        Remove photo
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadingPhoto}
+                    className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors disabled:opacity-50"
+                  >
+                    {uploadingPhoto ? 'Uploading…' : '+ Upload photo'}
+                  </button>
+                )}
+                {photoError && <p className="text-xs text-red-600 mt-1">{photoError}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Cover icon <span className="text-gray-400 font-normal">(used when no photo)</span>
+                </label>
                 <div className="flex flex-wrap gap-2">
                   {TREE_COVER_PRESETS.map((emoji) => (
                     <button

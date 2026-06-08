@@ -14,7 +14,12 @@ import type { ApiTreeGraph, TreeNode, TreeEdge, LayoutOptions, LayoutMode } from
 import { transformGraphToFlow } from './useTreeTransform';
 import { dagreLayout } from './algorithms/dagre';
 import { fanChartLayout, fanChartVisibleIds } from './algorithms/fanChart';
-import { ancestorChartLayout, descendantChartLayout } from './algorithms/ancestorChart';
+import {
+  ancestorChartLayout,
+  ancestorSubgraphIds,
+  descendantChartLayout,
+  descendantFamilySubgraphIds,
+} from './algorithms/ancestorChart';
 import { familyTreeLayout } from './algorithms/familyTree';
 import { pedigreeChartLayout, pedigreeChartVisibleIds } from './algorithms/pedigreeChart';
 
@@ -87,6 +92,35 @@ function applyLayout(
   let positions: Array<{ id: string; x: number; y: number }>;
 
   switch (opts.mode) {
+    case 'compact': {
+      // familyTreeLayout with tighter spacing: keeps spouses adjacent and
+      // children directly below their family group — no crossing union edges.
+      const visiblePersonIds = new Set(
+        nodes.filter((n) => n.type === 'person').map((n) => n.id)
+      );
+      const visibleFGIds = new Set(
+        nodes.filter((n) => n.type === 'family-group').map((n) => n.id)
+      );
+      const filteredGraph: ApiTreeGraph = {
+        treeId: graph.treeId,
+        persons: graph.persons.filter((p) => visiblePersonIds.has(p.id)),
+        familyGroups: graph.familyGroups
+          .filter((fg) => visibleFGIds.has(fg.id))
+          .map((fg) => ({
+            ...fg,
+            parentIds: fg.parentIds.filter((pid) => visiblePersonIds.has(pid)),
+            children: Object.fromEntries(
+              Object.entries(fg.children).filter(([cid]) => visiblePersonIds.has(cid))
+            ),
+          })),
+      };
+      positions = familyTreeLayout(filteredGraph, {
+        nodeHGap: 20,  // tighter sibling gap
+        nodeVGap: 60,  // tighter generation gap
+      });
+      break;
+    }
+
     case 'fan': {
       positions = fanChartLayout(graph, {
         focusPersonId: opts.focusPersonId,
@@ -131,8 +165,37 @@ function applyLayout(
       break;
     }
 
-    case 'vertical':
-    default: {
+    case 'ancestor-family':
+    case 'descendant-family': {
+      // Use familyTreeLayout so couples are kept adjacent.
+      // filteredNodes already contains the correct subgraph (set in the pre-filter step above).
+      const visiblePersonIds = new Set(
+        nodes.filter((n) => n.type === 'person').map((n) => n.id)
+      );
+      const visibleFGIds = new Set(
+        nodes.filter((n) => n.type === 'family-group').map((n) => n.id)
+      );
+      const filteredGraph: ApiTreeGraph = {
+        treeId: graph.treeId,
+        persons: graph.persons.filter((p) => visiblePersonIds.has(p.id)),
+        familyGroups: graph.familyGroups
+          .filter((fg) => visibleFGIds.has(fg.id))
+          .map((fg) => ({
+            ...fg,
+            parentIds: fg.parentIds.filter((pid) => visiblePersonIds.has(pid)),
+            children: Object.fromEntries(
+              Object.entries(fg.children).filter(([cid]) => visiblePersonIds.has(cid))
+            ),
+          })),
+      };
+      positions = familyTreeLayout(filteredGraph, {
+        nodeHGap: 20,
+        nodeVGap: 65,
+      });
+      break;
+    }
+
+    case 'vertical': {
       // Build a filtered ApiTreeGraph from the already-expanded visible nodes
       // so familyTreeLayout only sees what's on screen.
       const visiblePersonIds = new Set(
@@ -161,7 +224,8 @@ function applyLayout(
       break;
     }
 
-    case 'horizontal': {
+    case 'horizontal':
+    default: {
       const { nodes: positioned } = dagreLayout(nodes, edges, {
         direction: 'LR',
         nodeHGap: opts.nodeHGap,
@@ -207,6 +271,19 @@ export function useTreeLayout(
       filteredEdges = []; // fan chart has no edges
     } else if (layoutOpts.mode === 'pedigree' && layoutOpts.focusPersonId) {
       const visibleIds = pedigreeChartVisibleIds(graph, layoutOpts.focusPersonId, 4);
+      filteredNodes = rawNodes.filter((n) => visibleIds.has(n.id));
+      filteredEdges = rawEdges.filter(
+        (e) => visibleIds.has(e.source) && visibleIds.has(e.target),
+      );
+    } else if (layoutOpts.mode === 'ancestor-family' && layoutOpts.focusPersonId) {
+      // ancestorSubgraphIds already follows both parents at each level, so spouses are included
+      const visibleIds = ancestorSubgraphIds(graph, layoutOpts.focusPersonId, 100);
+      filteredNodes = rawNodes.filter((n) => visibleIds.has(n.id));
+      filteredEdges = rawEdges.filter(
+        (e) => visibleIds.has(e.source) && visibleIds.has(e.target),
+      );
+    } else if (layoutOpts.mode === 'descendant-family' && layoutOpts.focusPersonId) {
+      const visibleIds = descendantFamilySubgraphIds(graph, layoutOpts.focusPersonId, 100);
       filteredNodes = rawNodes.filter((n) => visibleIds.has(n.id));
       filteredEdges = rawEdges.filter(
         (e) => visibleIds.has(e.source) && visibleIds.has(e.target),

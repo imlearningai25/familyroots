@@ -33,6 +33,7 @@ export interface RelationshipPath {
   path: PathStep[];
   relationship_label?: string | null;
   alternative_label?: string | null;
+  edge_labels?: string[];
 }
 
 export interface NameSearchResponse {
