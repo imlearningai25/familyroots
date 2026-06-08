@@ -143,14 +143,40 @@ export function transformGraphToFlow(
 
   for (const fg of graph.familyGroups) {
     // Parent → FamilyGroup (union edge)
-    for (const parentId of fg.parentIds) {
-      const unionOrdinal = unionOrdinals.get(unionOrdinalKey(parentId, fg.id));
+    //
+    // For each family group we show at most ONE label (ordinal or customLabel).
+    // We assign it to whichever parent edge has the highest ordinal — that parent
+    // has the most marriages and gives the most useful context ("3rd Marriage"
+    // rather than "1st Marriage" from the other partner's perspective).
+    // If no parent has an ordinal (everyone has exactly 1 marriage of this type),
+    // the customLabel (if any) falls back to the first parent's edge.
+    const parentOrdinals = fg.parentIds.map((pid) =>
+      unionOrdinals.get(unionOrdinalKey(pid, fg.id))
+    );
+
+    let labelIdx = -1;
+    let bestOrdinal = 0;
+    parentOrdinals.forEach((ord, i) => {
+      if (ord != null && ord > bestOrdinal) {
+        bestOrdinal = ord;
+        labelIdx = i;
+      }
+    });
+    const customLabelIdx = labelIdx >= 0 ? labelIdx : 0;
+
+    for (let i = 0; i < fg.parentIds.length; i++) {
+      const parentId = fg.parentIds[i];
       edges.push({
         id: `union-${parentId}-${fg.id}`,
         source: parentId,
         target: fg.id,
         type: 'union' as const,
-        data: { kind: 'union', unionType: fg.unionType, unionOrdinal, customLabel: fg.customLabel },
+        data: {
+          kind: 'union',
+          unionType: fg.unionType,
+          unionOrdinal: i === labelIdx ? parentOrdinals[i] : undefined,
+          customLabel: i === customLabelIdx ? fg.customLabel : undefined,
+        },
         animated: false,
       } as TreeEdge);
     }
