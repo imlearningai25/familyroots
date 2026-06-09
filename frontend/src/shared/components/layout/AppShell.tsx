@@ -128,6 +128,19 @@ export default function AppShell() {
   const [notifLoading,  setNotifLoading]  = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
 
+  // Show a one-time welcome popup for new verified users
+  const [showWelcome, setShowWelcome] = useState(false);
+  useEffect(() => {
+    if (!user?.id || !user.isEmailVerified) return;
+    const key = `welcome_seen_${user.id}`;
+    if (!localStorage.getItem(key)) setShowWelcome(true);
+  }, [user?.id, user?.isEmailVerified]);
+
+  function dismissWelcome() {
+    if (user?.id) localStorage.setItem(`welcome_seen_${user.id}`, '1');
+    setShowWelcome(false);
+  }
+
   // Inject portal CSS custom properties onto <html> whenever theme changes
   useEffect(() => {
     const root = document.documentElement;
@@ -536,6 +549,39 @@ export default function AppShell() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Welcome popup (first login only) ── */}
+      {showWelcome && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 flex flex-col items-center text-center">
+            <div className="w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center mb-5">
+              <svg className="w-8 h-8 text-brand-600" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to FamilyRoots!</h2>
+            <p className="text-gray-500 text-sm leading-relaxed mb-6">
+              We're glad you're here. FamilyRoots helps you build, share, and explore your family tree.
+              <br /><br />
+              Not sure where to start? Head over to the <strong className="text-gray-700">Help</strong> section — it covers everything from creating your first tree to sharing it with family members.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <button
+                onClick={() => { dismissWelcome(); navigate('/help'); }}
+                className="flex-1 px-4 py-2.5 bg-brand-500 text-white text-sm font-semibold rounded-xl hover:bg-brand-600 transition-colors"
+              >
+                Go to Help
+              </button>
+              <button
+                onClick={dismissWelcome}
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                I'll explore on my own
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
